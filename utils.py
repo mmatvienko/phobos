@@ -16,3 +16,8 @@ def backtest_strategy(strategy, ticker, start_date, end_date):
     """
     pass
 
+def backtest_var(portfolio, start_date, end_date):
+    """
+    Takes portfolio. then just without strategy, sees what the
+    VaR is for every day, plots it, and then also plots actual returns on top
+    """
