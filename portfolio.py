@@ -54,7 +54,7 @@ class Portfolio():
         """
         Given price history do monte carlo to get VaR
         sigma is corresponds to standard deviation in worst case event, i.e.
-        2.33 = 99%, 2 = 95%, 3 = 99.7% or 1%, 5%, 0.3% chance of the worst case scenario calculated
+        2.33 = 99%, 1.63 = 95%, 3 = 99.7% or 1%, 5%, 0.3% chance of the worst case scenario calculated
         should get returns
 
         
@@ -69,7 +69,7 @@ class Portfolio():
         # calculate historical var
         if historical:
             tmp_returns = df.dot(self.weight_vector().T).sum(axis=1)
-            historical_var = np.percentile(tmp_returns, 5)
+            historical_var = np.percentile(tmp_returns, st.norm.cdf(z_score))
             return historical_var
 
         cov_matrix = df.cov()   # covariance matrix
