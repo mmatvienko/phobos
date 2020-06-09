@@ -2,6 +2,7 @@ import pytest
 import unittest
 
 import pandas as pd
+import numpy as np
 
 from ..portfolio import Portfolio
 from ..position import Position
@@ -22,7 +23,9 @@ class TestVaR(unittest.TestCase):
 
     def test_var(self):
         var = self.portfolio.VaR(historical=False)
-
+        hist_var = self.portfolio.VaR(historical=True)
+        print(f"var: {var}\thist_var: {hist_var}")
+        
     def test_inc_var(self):
         with pytest.raises(NotImplementedError):
             self.portfolio.incremental_VaR()
