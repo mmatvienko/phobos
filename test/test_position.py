@@ -23,5 +23,5 @@ class TestGetters(unittest.TestCase):
 class TestARIMA(unittest.TestCase):
     def test_arima(self):
         pos = Position("MSFT", 1, -1)
-        pos.arima(1,1,1)
+        pos.arima(5, 1, 1, time_frame="5Y", end=pd.Timestamp('2020-06-01'))
     
