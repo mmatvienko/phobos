@@ -11,3 +11,6 @@ Want to do gridsearch on it, put it in a strategy and backtest is. Seems like it
 ### Jun 9 
 Seem to be beating buy and hold in a bull market with the randomized microsoft data. beat return by ~1-2% in 315 trading days. Can predict whether the stock will go up or down about >55% (best has been 65%) of the time. I hope my code is right :D
 Want to test this on real data, so I definitely have to get going on the data caching system to avoid the multitude of calls to the API.
+
+### Jun 11
+Got the local data caching working... probably. Have to write some tests and experiment with it. To make sure I don't let any extranious calls out. 

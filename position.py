@@ -1,8 +1,9 @@
 import pandas as pd
 import numpy as np
 
+from .utils import pull_historical_data
 from datetime import datetime
-from iexfinance.stocks import get_historical_data, Stock
+from iexfinance.stocks import Stock
 
 class Position():
     def __init__(self, ticker, amount, entry_price, entry_date=pd.to_datetime("today")):
@@ -30,11 +31,11 @@ class Position():
         For now only get the closing price
         start and end are datetime objects
         """
-
+        
         if not start:
             start = end - pd.Timedelta(time_frame)
 
-        df = get_historical_data(self.ticker, start, end, output_format='pandas')
+        df = pull_historical_data(self.ticker, start, end)
         return df[price_type]
 
     def get_returns(self, start, end, time_frame="1Y", price_type="open"):
@@ -49,7 +50,9 @@ class Position():
     def arima(self, p, d, q, end=pd.to_datetime("today"), time_frame="1Y"):
         """
         Use confidence of ARIMA to define how many stocks to buy/sell
+        Use information criterion to optimize model, maybe use KL divergence
         """
+        
         from statsmodels.tsa.arima_model import ARIMA
         import matplotlib.pyplot as plt
         from pandas.plotting import lag_plot
