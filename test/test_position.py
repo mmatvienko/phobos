@@ -5,9 +5,10 @@ import pandas as pd
 
 from ..portfolio import Portfolio
 from ..position import Position
-from ..utils import set_test_env
+from ..utils import set_test_env, set_prod_env
 
 set_test_env()
+# set_prod_env()
 
 class TestGetters(unittest.TestCase):
     def test_get_returns(self):
@@ -23,5 +24,5 @@ class TestGetters(unittest.TestCase):
 class TestARIMA(unittest.TestCase):
     def test_arima(self):
         pos = Position("MSFT", 1, -1)
-        pos.arima(5, 1, 1, time_frame="5Y", end=pd.Timestamp('2020-06-01'))
+        pos.arima(5, 1, 1, time_frame="4Y", end=pd.Timestamp('2020-06-01'))
     

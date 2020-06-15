@@ -8,6 +8,8 @@ import uuid
 from iexfinance.stocks import get_historical_data
 
 def set_test_env():
+    os.environ["ENV_TYPE"] = "test"
+
     os.environ["IEX_API_VERSION"] = iex_sandbox_endpoint
     os.environ["IEX_TOKEN"] = iex_sandbox_secret
 
@@ -16,6 +18,8 @@ def set_test_env():
     os.environ["APCA_API_SECRET_KEY"] = alpaca_secret    
 
 def set_prod_env():
+    os.environ["ENV_TYPE"] = "prod"
+
     os.environ["IEX_API_VERSION"] = iex_endpoint
     os.environ["IEX_TOKEN"] = iex_secret
 
@@ -28,8 +32,7 @@ def get_data_info():
     Reads in a json file that is a mapping between tickers and their files names
     """
 
-    path = "data/info.json"
-
+    path = os.path.join("data", os.environ["ENV_TYPE"], "info.json")
     if not os.path.exists(path):
         # need to create an empty file
         return {}
@@ -42,7 +45,7 @@ def save_data_info(path_dict):
     """
     Save the information about ticker and their file IDs
     """
-    path = "data/info.json"
+    path = os.path.join("data", os.environ["ENV_TYPE"], "info.json")
     with open(path, "w") as f:
         json.dump(path_dict, f)
 
@@ -51,23 +54,25 @@ def pull_historical_data(ticker, start, end):
     we will fill in those gaps
     TODO:    needs extensive testing
     """
-
-    path_dict = get_data_info()
+    if not isinstance(start, pd.Timestamp):
+        raise ValueError("start time has to be a pandas Timestamp")
+    if not isinstance(end, pd.Timestamp):
+        raise ValueError("end time has to be a pandas Timestamp")
     
+    path_dict = get_data_info()
+
     if ticker not in path_dict:
         # doesnt exist yet, can just read in the whole thing and save it
-        file_loc = "data/" + str(uuid.uuid1()) + ".pkl"
+        file_loc = os.path.join("data", os.environ["ENV_TYPE"], str(uuid.uuid1()) + ".pkl")
 
         df = get_historical_data(ticker, start, end, output_format='pandas')
         df.to_pickle(file_loc)
 
         path_dict[ticker] = file_loc
 
-        print(f"pulled data from cloud")
-    
         save_data_info(path_dict)
         return df
-
+    
     # have to actually read from file first to find whats missing
     # have to deal with date ranges
     file_loc = path_dict[ticker]
@@ -87,7 +92,7 @@ def pull_historical_data(ticker, start, end):
         # in the middle, get it from local dataframe
         return df[start : end]
 
-    elif start < local_start and end < local_end:
+    elif start < local_start and end <= local_end:
         # grab from (start, local_start - 1D)
         temp_name.append((start, local_start - one_day))
 
@@ -99,7 +104,6 @@ def pull_historical_data(ticker, start, end):
     elif start <= local_end and end > local_end:
         # the right side is peaking out, get (local_end + 1D, end)
         temp_name.append((local_end + one_day, end))
-
 
     while temp_name:
         start_, end_ = temp_name.pop(0)

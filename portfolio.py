@@ -9,6 +9,18 @@ class Portfolio():
     def __init__(self):
         self.positions = {}
 
+    def __iter__(self):
+        self._n = 0
+        return self
+
+    def __next__(self):
+        keys = self.positions.keys()
+        if self._n >= len(keys): 
+            raise StopIteration 
+        else: 
+            self._n += 1
+            return keys[self._n-1]
+        
     def add_position(self, position):
         self.positions[position.ticker] = position
 

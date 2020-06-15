@@ -50,6 +50,7 @@ class Position():
     def arima(self, p, d, q, end=pd.to_datetime("today"), time_frame="1Y"):
         """
         Use confidence of ARIMA to define how many stocks to buy/sell
+        TODO: clean up
         Use information criterion to optimize model, maybe use KL divergence
         """
         
@@ -58,7 +59,12 @@ class Position():
         from pandas.plotting import lag_plot
         from sklearn.model_selection import train_test_split
         from sklearn.metrics import mean_squared_error
-        hist = self.history(time_frame=time_frame)
+        hist = self.history(end=end, time_frame=time_frame)
+        # from pandas.plotting import autocorrelation_plot
+        # autocorrelation_plot(hist)
+        # plt.acorr(hist, maxlags=600)
+        # plt.show()
+        
         plt.figure(figsize=(10,10))
         lag_plot(hist, lag=5)
         plt.title(f"Random {self.ticker} correlation plot")
@@ -71,6 +77,8 @@ class Position():
         plt.plot(train_data, 'blue', label='Training Data')
         plt.plot(test_data, 'green', label='Testing Data')
 
+
+        
         print(train_data, test_data)
         
         plt.legend()
@@ -85,12 +93,17 @@ class Position():
         cash = 100_000
         shares = 0
         
-        binary_results = []
+        y_pred = []
+        y = []
+        
         for t in range(len(test_data)):
             model = ARIMA(history, order=(p,d,q))
             model_fit = model.fit(disp=0)
-            output = model_fit.forecast()
-            yhat = max(output[0])
+            print("params", model_fit.params)
+            output = model_fit.predict(start=len(history), end=len(history))  # returns single value (difference)
+            print(model_fit.forecast(steps=1)) # return array of prediction, stderr, confidence interval
+            print(output)
+            yhat = max(output)
             price = history[-1]
 
             predictions.append(yhat)
@@ -106,11 +119,8 @@ class Position():
                 shares += amt
                 cash -= amt*price
                 # print(f"bought {amt} @ {price}")
-                if obs > price:
-                    binary_results.append(1)
-                else:
-                    binary_results.append(0)
-                        
+                y_pred.append(1)
+
             elif yhat < price:
                 # price is going down
                 amt = cash // price // 10
@@ -119,18 +129,23 @@ class Position():
                 shares -= amt
                 cash += amt*price
                 # print(f"sold {amt} @ {price}")
-                if obs < price:
-                    binary_results.append(1)
-                else:
-                    binary_results.append(0)
+                y_pred.append(0)
+                
+            if obs < price:
+                y.append(0)
+            else:
+                y.append(1)
+                    
             if not t % 5:
                 print(f"done {t} of {len(test_data)}")
 
 
+        from sklearn.metrics import f1_score
+        print("F1_score: ", f1_score(y, y_pred)
+        )
         print(f"holding return: {(test_data[-1] - test_data[0])/(test_data[0])}")
         final_val = cash + shares*history[-1]
         print(f"trading returns: {(final_val - 100_000)/100_000}")
-        print(f"trend prediction accuracy: {sum(binary_results)/len(binary_results):.2f}")
         
         error = mean_squared_error(test_data, predictions)
         print('Testing Mean Squared Error: %.3f' % error)
