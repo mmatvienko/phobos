@@ -114,13 +114,21 @@ def pull_historical_data(ticker, start, end):
     save_data_info(path_dict)   # i dont think there is anything to save. remove?
     return df[start : end]
 
-def backtest_strategy(strategy, ticker, start_date, end_date):
+def backtest_strategy(strategy, tickers, start_date, end_date):
     """
     takes a strat and backtests it
     not sure if it should be for a ticker or for portfolio
     """
-    pass
+    portfolio = Portfolio()
+    for ticker in tickers:
+        portfolio.add_position(Position(ticker, 0))
 
+    for date in pd.date_range(start_date, end_date, freq="1D"):
+        portfolio.step_portfolio(date)
+
+    # here would be a good place for metrics and graphs
+    # how much money could have been made from just holding or something
+        
 def backtest_var(portfolio, start_date, end_date):
     """
     Takes portfolio. then just without strategy, sees what the

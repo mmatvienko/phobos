@@ -2,40 +2,47 @@ import pandas as pd
 import numpy as np
 
 from .utils import pull_historical_data
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from iexfinance.stocks import Stock
 
 class Position():
-    def __init__(self, ticker, amount, entry_price, entry_date=pd.to_datetime("today")):
+    def __init__(self, ticker, amount=0, entry_price=None, entry_date=date.today()):
         self.ticker = ticker
         self.entry_price = entry_price
         self.entry_date = entry_date
         self.amount = amount
         # verify that the entry price is within opening and closing of the entry date
-        
-    def close(self):
-        pass
 
     def open(self):
+        # TODO pull the logic for opening a position out of portfolio
         pass
-
+        
     def get_amount(self):
         return self.amount
+
+    def get_value(self):
+        return self.get_amount * self.get_price()
     
     def get_price(self, time=None):
         if not time:
             return Stock(self.ticker).get_price()
     
-    def history(self, start=None, end=pd.to_datetime("today"), time_frame="1Y", price_type="open"):
+    def history(self, start=None, end=date.today() + timedelta(days=1), time_frame="1Y", price_type=None):
         """
         For now only get the closing price
         start and end are datetime objects
+        maybe change end=TODAY+1
         """
         
         if not start:
             start = end - pd.Timedelta(time_frame)
 
         df = pull_historical_data(self.ticker, start, end)
+
+        # return the full row if no price type is specified
+        if not price_type:
+            return df
+        
         return df[price_type]
 
     def get_returns(self, start, end, time_frame="1Y", price_type="open"):
@@ -47,7 +54,7 @@ class Position():
         return pd.DataFrame(historical_returns, columns=[self.ticker], index=prices.index[:-1])
 
 
-    def arima(self, p, d, q, end=pd.to_datetime("today"), time_frame="1Y"):
+    def arima(self, p, d, q, end=date.today(), time_frame="1Y"):
         """
         Use confidence of ARIMA to define how many stocks to buy/sell
         TODO: clean up
@@ -139,10 +146,6 @@ class Position():
             if not t % 5:
                 print(f"done {t} of {len(test_data)}")
 
-
-        from sklearn.metrics import f1_score
-        print("F1_score: ", f1_score(y, y_pred)
-        )
         print(f"holding return: {(test_data[-1] - test_data[0])/(test_data[0])}")
         final_val = cash + shares*history[-1]
         print(f"trading returns: {(final_val - 100_000)/100_000}")

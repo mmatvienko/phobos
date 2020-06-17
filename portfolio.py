@@ -5,10 +5,17 @@ import numpy as np
 class Portfolio():
     """
     Mainly just a dict of positions
+    Keep track of cash inserted to calculate net return
     """
-    def __init__(self):
+    def __init__(self, cash=0):
         self.positions = {}
+        self.init_cash = cash
+        self.cash = cash
+        self.net_value = cash
 
+    def __getitem__(self, ticker):
+        return self.positions[ticker]
+        
     def __iter__(self):
         self._n = 0
         return self
@@ -20,6 +27,48 @@ class Portfolio():
         else: 
             self._n += 1
             return keys[self._n-1]
+
+    def close_pos(self, ticker, amt=None):
+        # if no specified amount, close the whole position
+        pos = self.positions[ticker]
+        if not amt:
+            amt = pos.amount
+        price = pos.get_price()    
+        pos.amount -= amt
+        self.cash += price * amt
+
+        return amt
+
+    def open_pos(self, ticker, amt):
+        pos = self[ticker]
+        # TODO should do cash check  and report how much actually bought
+        pos.amount = amt
+        pos.entry_date = date.today()
+        pos.entry_price = -1    # doesnt matter, but needs to be recalced (do in Pos)
+        
+        return amt              # the amount bought
+
+    def net_return(self):
+        return self.net_value - self.init_cash
+        
+    def evaluate(self):
+        """ Save the worth of portfolio to a dataframe with time index"""
+        self.net_value = 0
+        
+        for ticker in positions:
+            pos = positions[ticker]
+            self.net_value += pos.get_price() * pos.get_amount()
+
+        self.net_value += self.cash
+
+        return self.net_value
+            
+    def add_cash(self, amount):
+        """ Add cash to portfolio to buy more stuff.
+        Also save this amount to init_cash, to calc total return
+        """
+        self.cash += amount
+        self.init_cash += amount
         
     def add_position(self, position):
         self.positions[position.ticker] = position
