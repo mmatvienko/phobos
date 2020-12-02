@@ -1,4 +1,5 @@
-from .secrets import *
+from canopus.secrets import *
+from datetime import date, timedelta, datetime
 
 import pandas as pd
 import os
@@ -7,32 +8,13 @@ import uuid
 
 from iexfinance.stocks import get_historical_data
 
-def set_test_env():
-    os.environ["ENV_TYPE"] = "test"
-
-    os.environ["IEX_API_VERSION"] = iex_sandbox_endpoint
-    os.environ["IEX_TOKEN"] = iex_sandbox_secret
-
-    os.environ["APCA_API_BASE_URL"] = alpaca_endpoint
-    os.environ["APCA_API_KEY_ID"] = alpaca_api_id
-    os.environ["APCA_API_SECRET_KEY"] = alpaca_secret    
-
-def set_prod_env():
-    os.environ["ENV_TYPE"] = "prod"
-
-    os.environ["IEX_API_VERSION"] = iex_endpoint
-    os.environ["IEX_TOKEN"] = iex_secret
-
-    os.environ["APCA_API_BASE_URL"] = alpaca_endpoint
-    os.environ["APCA_API_KEY_ID"] = alpaca_api_id
-    os.environ["APCA_API_SECRET_KEY"] = alpaca_secret        
 
 def get_data_info():
     """
     Reads in a json file that is a mapping between tickers and their files names
     """
 
-    path = os.path.join("data", os.environ["ENV_TYPE"], "info.json")
+    path = os.path.join(os.path.dirname(__file__), "data", os.environ["ENV_TYPE"], "info.json")
     if not os.path.exists(path):
         # need to create an empty file
         return {}
@@ -45,14 +27,15 @@ def save_data_info(path_dict):
     """
     Save the information about ticker and their file IDs
     """
-    path = os.path.join("data", os.environ["ENV_TYPE"], "info.json")
+    path = os.path.join(os.path.dirname(__file__), "data", os.environ["ENV_TYPE"], "info.json")
     with open(path, "w") as f:
         json.dump(path_dict, f)
 
-def pull_historical_data(ticker, start, end):
+def pull_historical_data(ticker, start, end, debug=False):
     """ If there are gaps between local data and what the users need,
     we will fill in those gaps
     TODO:    needs extensive testing
+    TODO:    needs to handle when start or end include nontrading days
     """
     if not isinstance(start, pd.Timestamp):
         raise ValueError("start time has to be a pandas Timestamp")
@@ -63,15 +46,18 @@ def pull_historical_data(ticker, start, end):
 
     if ticker not in path_dict:
         # doesnt exist yet, can just read in the whole thing and save it
-        file_loc = os.path.join("data", os.environ["ENV_TYPE"], str(uuid.uuid1()) + ".pkl")
+        print(f"Got {ticker} info from IEX")
+        file_loc = os.path.join(os.path.dirname(__file__), "data", os.environ["ENV_TYPE"], str(uuid.uuid1()) + ".pkl")
 
         df = get_historical_data(ticker, start, end, output_format='pandas')
         df.to_pickle(file_loc)
 
         path_dict[ticker] = file_loc
+        if debug: print(f"Got {ticker} info from local store")
 
         save_data_info(path_dict)
         return df
+
     
     # have to actually read from file first to find whats missing
     # have to deal with date ranges
@@ -80,7 +66,7 @@ def pull_historical_data(ticker, start, end):
     local_start, local_end = min(df.index), max(df.index)
     one_day = pd.Timedelta("1D")
     temp_name = []
-
+    if debug: print(f"local_start: {local_start}\tlocal_end: {local_end}")
     if end <= local_start:
         # gap on the left, pull from (start, local_start - 1D)
         temp_name.append((start, local_start - one_day))
@@ -90,7 +76,7 @@ def pull_historical_data(ticker, start, end):
 
     elif start >= local_start and end <= local_end:
         # in the middle, get it from local dataframe
-        return df[start : end]
+        return df[start : end - one_day]
 
     elif start < local_start and end <= local_end:
         # grab from (start, local_start - 1D)
@@ -107,31 +93,34 @@ def pull_historical_data(ticker, start, end):
 
     while temp_name:
         start_, end_ = temp_name.pop(0)
+        if debug: print(f"Getting {ticker} from IEX with start {start_} and end {end_}")
         df_ = get_historical_data(ticker, start_, end_, output_format="pandas")
         df = pd.concat([df, df_], axis=0)
 
     df = df.sort_index()
-    save_data_info(path_dict)   # i dont think there is anything to save. remove?
-    return df[start : end]
+    df.to_pickle(file_loc)
+    return df[start : end - one_day]  # remove all the + one_day and put them in df_ line
 
-def backtest_strategy(strategy, tickers, start_date, end_date):
-    """
-    takes a strat and backtests it
-    not sure if it should be for a ticker or for portfolio
-    """
-    portfolio = Portfolio()
-    for ticker in tickers:
-        portfolio.add_position(Position(ticker, 0))
+def get_sma(ticker, interval, time_periods, timestamp=None):
+    from alpha_vantage.techindicators import TechIndicators
+    import time
 
-    for date in pd.date_range(start_date, end_date, freq="1D"):
-        portfolio.step_portfolio(date)
+    """ None timestamp just means get the most recent"""
+    sma = TechIndicators(key=ALPHA_VANTAGE, output_format="pandas").get_sma(
+        ticker, 
+        interval=interval, 
+        time_period=time_periods,
+    )
+    
+    if not sma:
+        raise ValueError("Didn't manage to get SMA from alpha_vantage API")
 
-    # here would be a good place for metrics and graphs
-    # how much money could have been made from just holding or something
-        
-def backtest_var(portfolio, start_date, end_date):
-    """
-    Takes portfolio. then just without strategy, sees what the
-    VaR is for every day, plots it, and then also plots actual returns on top
-    """
-    pass
+    if timestamp and isinstance(timestamp, pd.Timestamp):
+        date_index = timestamp_to_date(timestamp)
+    else:
+        date_index = sma[0].index[-1]
+
+    return sma[0].loc[date_index]['SMA']
+
+def timestamp_to_date(timestamp):
+    return datetime.fromtimestamp(timestamp).strftime("%Y-%d-%m")

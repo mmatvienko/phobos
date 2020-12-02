@@ -1,32 +1,67 @@
 import pandas as pd
 import numpy as np
 
-from .utils import pull_historical_data
+from canopus.utils import pull_historical_data
 from datetime import datetime, date, timedelta
 from iexfinance.stocks import Stock
 
 class Position():
-    def __init__(self, ticker, amount=0, entry_price=None, entry_date=date.today()):
+    def __init__(self, ticker):
         self.ticker = ticker
-        self.entry_price = entry_price
-        self.entry_date = entry_date
-        self.amount = amount
-        # verify that the entry price is within opening and closing of the entry date
+        self.entry_date = None
+        self.avg_cost = 0
+        self.amount = 0
+        self.date = None        # date will be incremented in backtesting.
 
-    def open(self):
-        # TODO pull the logic for opening a position out of portfolio
-        pass
+        # TODO verify that the entry price is within opening and closing of the entry date
+
+    def open(self, amt, available_funds):
+        curr_price = self.get_price()
+
+        if curr_price is None:
+            # today is not a trading day, can't open
+            return None
+        
+        amt = min(available_funds//curr_price, amt)  # incase funds aren't enough to fullfil the order
+        self.avg_cost = (self.avg_cost * self.amount + curr_price * amt) / (self.amount + amt)
+        
+        print(f"amt: {amt}")
+        # only set the entry date if the position has not been entered yet
+        if not self.amount:
+            self.entry_date = self.date
+
+        self.amount += amt
+
+        # return total amount of money spent
+        return curr_price * amt
+    
+    def close(self, amt):
+        self.amount -= amt
+
+        # return the amount of money received for sale
+        return amt*self.get_price()
         
     def get_amount(self):
         return self.amount
 
-    def get_value(self):
-        return self.get_amount * self.get_price()
+    def get_value(self, date=date.today()):
+        return self.get_amount() * self.get_price()
     
-    def get_price(self, time=None):
-        if not time:
+    def get_price(self, live=False):
+        """
+        Returns none if not a trading day
+        """
+        if live:
             return Stock(self.ticker).get_price()
-    
+        else:
+            ret = None
+            tmp_date = self.date + timedelta(days=1)
+            while ret is None:
+                ret = self.history(end=tmp_date, time_frame="1D", price_type="close")
+                tmp_date -= timedelta(days=1)
+
+            return ret.item()
+        
     def history(self, start=None, end=date.today() + timedelta(days=1), time_frame="1Y", price_type=None):
         """
         For now only get the closing price
@@ -39,6 +74,12 @@ class Position():
 
         df = pull_historical_data(self.ticker, start, end)
 
+        if df.empty:
+            # not a trading day
+            # seems to be getting called twice on 4th of july
+            # print(f"returned none from position.history on {end} for {self.ticker}")
+            return None
+        
         # return the full row if no price type is specified
         if not price_type:
             return df
@@ -53,6 +94,8 @@ class Position():
             
         return pd.DataFrame(historical_returns, columns=[self.ticker], index=prices.index[:-1])
 
+    def set_date(self, date):
+        self.date = date
 
     def arima(self, p, d, q, end=date.today(), time_frame="1Y"):
         """

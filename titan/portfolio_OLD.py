@@ -12,55 +12,68 @@ class Portfolio():
         self.init_cash = cash
         self.cash = cash
         self.net_value = cash
+        self.min_cash = cash
 
     def __getitem__(self, ticker):
         return self.positions[ticker]
-        
+
     def __iter__(self):
         self._n = 0
         return self
 
     def __next__(self):
-        keys = self.positions.keys()
+        keys = [key for key in self.positions]
         if self._n >= len(keys): 
             raise StopIteration 
         else: 
             self._n += 1
             return keys[self._n-1]
 
-    def close_pos(self, ticker, amt=None):
-        # if no specified amount, close the whole position
-        pos = self.positions[ticker]
-        if not amt:
-            amt = pos.amount
-        price = pos.get_price()    
-        pos.amount -= amt
-        self.cash += price * amt
-
-        return amt
+    def set_date(self, date):
+        # new day, save min cash before action
+        self.min_cash = min(self.min_cash, self.cash)
+        for ticker in self:
+            self[ticker].set_date(date)
 
     def open_pos(self, ticker, amt):
-        pos = self[ticker]
-        # TODO should do cash check  and report how much actually bought
-        pos.amount = amt
-        pos.entry_date = date.today()
-        pos.entry_price = -1    # doesnt matter, but needs to be recalced (do in Pos)
+        print("opening pos in port")
+        total_cost = self[ticker].open(amt, self.cash)
+
+        if total_cost is None:
+            # couldn't open
+            return None
+        
+        print("total cost", total_cost)
+        self.cash -= total_cost
         
         return amt              # the amount bought
+        
+    def close_pos(self, ticker, amt=None):
+        # if no specified amount, close the whole position
+        pos = self[ticker]
+
+        if not amt:
+            amt = pos.amount
+        else:
+            amt = min(amt, pos.amount)  # make sure we dont go negative for now
+        total_sale = pos.close(amt)
+
+        self.cash += total_sale
+
+        return amt
 
     def net_return(self):
         return self.net_value - self.init_cash
         
-    def evaluate(self):
+    def evaluate(self, date):
         """ Save the worth of portfolio to a dataframe with time index"""
         self.net_value = 0
         
-        for ticker in positions:
-            pos = positions[ticker]
-            self.net_value += pos.get_price() * pos.get_amount()
+        for ticker in self:
+            pos = self[ticker]
+            self.net_value += pos.get_value(date=date)
 
         self.net_value += self.cash
-
         return self.net_value
             
     def add_cash(self, amount):
@@ -98,7 +111,7 @@ class Portfolio():
         index = None
         # get the price history for all positions in portfolio
         for ticker in self.positions:
-            hist = self.positions[ticker].get_returns(start, end)
+            hist = self.positions[ticker].get_returns(start, end, type="close")
             
             return_history[ticker] = hist[ticker].to_list()
             

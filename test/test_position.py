@@ -3,9 +3,9 @@ import datetime
 
 import pandas as pd
 
-from ..portfolio import Portfolio
-from ..position import Position
-from ..utils import set_test_env, set_prod_env
+from titan.portfolio import Portfolio
+from titan.position import Position
+from canopus.utils import set_test_env, set_prod_env
 
 set_test_env()
 # set_prod_env()

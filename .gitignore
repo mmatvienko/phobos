@@ -1,0 +1,13 @@
+# secret stuff like passwords or env vars
+secrets.py
+
+# editor files
+*~
+\#*\#
+.vscode
+.history
+
+# python shit
+__pycache__
+.ipynb_checkpoints
+.pytest_cache

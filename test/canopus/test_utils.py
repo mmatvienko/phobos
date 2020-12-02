@@ -4,7 +4,7 @@ import pytest
 
 import pandas as pd
 
-from ..utils import set_test_env, pull_historical_data
+from canopus.utils import set_test_env, pull_historical_data
 
 set_test_env()
 
@@ -15,14 +15,14 @@ class TestPullHistorical(unittest.TestCase):
         end = pd.Timestamp("2019-02-01")
 
         df = pull_historical_data(ticker, start, end)
-        assert len(df) == 22
+        assert len(df) == 21
 
         end_ = pd.Timestamp("2019-03-01")
         df = pull_historical_data(ticker, start, end_)
-        assert len(df) == 41
+        assert len(df) == 40
 
         df = pull_historical_data(ticker,pd.Timestamp("2019-01-15"), end)
-        assert len(df) == 13
+        assert len(df) == 12
 
     def test_errors(self):
         with pytest.raises(ValueError):

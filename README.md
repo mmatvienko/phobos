@@ -1,5 +1,10 @@
 # Project Phobos
 
+### Nov 29
+Restructured to seperate modeling, running, and data pulling related modules. I forsee the usage of metaflow perhaps.
+### Jun 21
+I did this annoying thing where I buit half the function with live trading in mind. Making backtesting impossible since they would get live prices etc. Have to rework this
+
 ### Jun 13
 a long with a trading bot. I envision a tool for visualizing information. graph your value at risk. Or, get a stocks historical data, or plot its autocorrelation. could make a pipeline of a neural network and ARIMA. the neural network has loss function of how correlated data is correlated at a certain lag. this is then passed into ARIMA. ARIMA predicts and that is passed back to neural network to get the predicted data.
 
