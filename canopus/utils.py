@@ -101,11 +101,24 @@ def pull_historical_data(ticker, start, end, debug=False):
     df.to_pickle(file_loc)
     return df[start : end - one_day]  # remove all the + one_day and put them in df_ line
 
-def get_sma(ticker, interval, time_periods, timestamp=None):
+def get_sma(
+    ticker:str, 
+    interval:str, 
+    time_periods: int, 
+    timestamp: pd.Timestamp=None):
     from alpha_vantage.techindicators import TechIndicators
     import time
 
-    """ None timestamp just means get the most recent"""
+    # pkl path to the cache dataframe
+    path = os.path.join(os.path.dirname(__file__), "data", os.environ["ENV_TYPE"], f"{ticker}_{interval}_sma{time_periods}.csv")
+    if os.path.exists(path):
+        # can just pull and return the saved object
+        # print("Used local cache for SMA")
+        df = pd.read_csv(path, index_col="date")
+        df.index = pd.DatetimeIndex(df.index)
+        return df
+
+    """ None timestamp=None just means get the most recent"""
     sma = TechIndicators(key=ALPHA_VANTAGE, output_format="pandas").get_sma(
         ticker, 
         interval=interval, 
@@ -114,13 +127,18 @@ def get_sma(ticker, interval, time_periods, timestamp=None):
     
     if not sma:
         raise ValueError("Didn't manage to get SMA from alpha_vantage API")
+    
+    # save the csv
+    df = pd.DataFrame(sma[0])    # apparently sma[0] _could_ be a string
+    df.index = pd.DatetimeIndex(df.index)
+    df.to_csv(path, index=True)
 
-    if timestamp and isinstance(timestamp, pd.Timestamp):
-        date_index = timestamp_to_date(timestamp)
-    else:
-        date_index = sma[0].index[-1]
-
-    return sma[0].loc[date_index]['SMA']
+    # return the df
+    print("Pulled SMA from API")
+    return df
 
 def timestamp_to_date(timestamp):
-    return datetime.fromtimestamp(timestamp).strftime("%Y-%d-%m")
+    ts = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
+    print(datetime.fromtimestamp(timestamp))
+    print(f"turned timestamp from {timestamp} to {ts}")
+    return ts
