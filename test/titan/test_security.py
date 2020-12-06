@@ -18,6 +18,8 @@ class TestGetters(unittest.TestCase):
         sma = self.security.get_sma("daily", 50, timestamp=1606871227)
         assert 345.2516 == sma
 
+        sma = self.security.get_sma("daily", 50, timestamp=None)
+
     def test_get_price(self):
         price = self.security.get_price()   # will change and will be random when on test env
 

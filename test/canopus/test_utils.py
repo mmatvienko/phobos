@@ -4,7 +4,7 @@ import pytest
 
 import pandas as pd
 
-from canopus.utils import set_test_env, pull_historical_data
+from canopus.utils import set_test_env, pull_historical_data, timestamp_to_date
 
 set_test_env()
 
@@ -23,6 +23,11 @@ class TestPullHistorical(unittest.TestCase):
 
         df = pull_historical_data(ticker,pd.Timestamp("2019-01-15"), end)
         assert len(df) == 12
+
+    def test_convert(self):
+        ts = pd.Timestamp("2020-02-01")
+        recon = timestamp_to_date(ts.value/1e9)
+        assert ts == pd.Timestamp(recon)
 
     def test_errors(self):
         with pytest.raises(ValueError):
