@@ -1,6 +1,8 @@
 import scipy.stats as st
 import pandas as pd
 import numpy as np
+import logging
+
 from titan.dumb_broker import DumbBroker
 from titan.security import Security
 
@@ -33,44 +35,52 @@ class Portfolio():
             self._n += 1
             return keys[self._n-1]
 
-    def open_pos(self, ticker, amt, price=None, timestamp=None):
-        """ Probably want to specify price """
-        print(f"{'Selling' if amt < 0 else 'Buying'} {amt} {ticker} to open")
-
-        # TODO cash limitation implementation
-        amt, price = self.broker.open(ticker, amt=amt, timestamp=timestamp)
+    def order(self, ticker:str, amt:int, price:float=None, timestamp:pd.Timestamp=None):
+        """ Can go short, can go long based on amt
+        """
+        amt, price = self.broker.open(ticker, amt=amt, price=price, timestamp=timestamp)
+        p_str = f"{'SELL -' if amt < 0 else 'BUY +'} {amt}"
         
-        if amt is None:
-            return None   # couldn't open
+        if price:
+            logging.info(f"{p_str} {ticker} @{price}")
+        else:
+            logging.info(f"Failed to execute {p_str} {ticker} @{price}")
+            return None, None
         
         total_cost = amt*price
 
-        # add to positions
         if ticker in self.positions:
             self.positions[ticker] += amt
         else:
             self.positions[ticker] = amt
 
-        print("total cost", total_cost)
+        logging.info(f"Total cost of transaction is {total_cost}")
         self.cash -= total_cost
-        
-        return amt
-        
-    def close_pos(self, ticker, amt=None, date=None):
-        print(f"{'Selling' if amt < 0 else 'Buying'} to close")
 
-        # TODO cash limitation implementation
-        amt, price = self.broker.close(ticker, amt=amt, timestamp=date)
-        
-        if amt is None:
-            return None   # couldn't open
-        
-        total_cost = amt*price
+        return amt, price
 
-        print("total cost", total_cost)
-        self.cash += total_cost
+    def close_pos(self, ticker, timestamp:pd.Timestamp=None):
+        """ Close out the position, whatever it may be. Meaning the ticker amy will be 0
+        """
+        # make sure the position actually exists
+        if ticker not in self.positions:
+            self.positions[ticker] = 0
+            return True
+
+        # amount needed to transact to offset current open position
+        amt = -self.positions[ticker]
+        if not amt:
+            return False
+
+        # want to keep trying to sell the fill amount until a valid order comes through
+        ATTEMPTS = 5
+        for _ in range(ATTEMPTS):
+            close_amt, close_price = self.order(ticker, amt, timestamp=timestamp)
+            if close_amt:
+                logging.info(f"Closed out {close_amt} {ticker} @{close_price}")
+                return True
         
-        return amt
+        return False
 
     def net_return(self):
         return self.net_value - self.init_cash

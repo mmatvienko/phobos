@@ -35,11 +35,19 @@ class Security():
 
         return ret.item()
 
-    def history(self, start=None, end=date.today() + timedelta(days=1), time_frame="1Y", price_type=None):
+    def history(
+        self, 
+        start=None, 
+        end=date.today() + timedelta(days=1), 
+        time_frame="1Y", 
+        price_type=None
+        ):
         """
         For now only get the closing price
         start and end are datetime objects
         maybe change end=TODAY+1
+
+        price type: can be something like close or open
         """
         
         if not start:
@@ -59,6 +67,12 @@ class Security():
         
         return df[price_type]
 
-    def get_sma(self, interval, time_periods, timestamp=None):
-        sma = utils.get_sma(self.ticker, interval, time_periods, timestamp=None)
+    def get_sma(self, interval, time_periods, timestamp:pd.Timestamp=None):
+        """
+        interval: the amount of time between each data point
+        time_periods: number of data points used to calculated the SMA
+        """
+        # go to the database here
+        sma_frame = utils.get_sma(self.ticker, interval, time_periods, timestamp=timestamp)
+        sma = sma_frame.loc[timestamp].item()
         return sma
