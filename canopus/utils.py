@@ -1,8 +1,8 @@
-from canopus.secrets import *
+from canopus.secrets import ALPHA_VANTAGE
 from datetime import date, timedelta, datetime
 
 import pandas as pd
-import os
+import os, logging
 import json
 import uuid
 
@@ -30,6 +30,83 @@ def save_data_info(path_dict):
     path = os.path.join(os.path.dirname(__file__), "data", os.environ["ENV_TYPE"], "info.json")
     with open(path, "w") as f:
         json.dump(path_dict, f)
+
+# for non-float
+col_types = {}
+
+def _check_table_health(con, table, cols):
+    cur = con.cursor()
+
+    # check for table
+    query = f"SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME ='{table}';"
+    cur.execute(query)    
+    fetched = cur.fetchall()
+    if not fetched:
+        col_str = ""
+        # get all the appropriate column types and build string for query
+        for col in cols:
+            type_ = col_types.get(col, "FLOAT")   # default to FLOAT type
+            col_str += f", {col} {type_}"
+
+        # create the table
+        query = f"CREATE TABLE {table} (time TIMESTAMP NOT NULL{col_str}, PRIMARY KEY(time));"
+        cur.execute(query)  
+        con.commit()
+        logging.info(f"created missing table for {table}")
+        missing_cols = cols
+    else:
+        missing_cols = []
+        # check for price column
+        columns = [x[3] for x in fetched]
+        logging.info(columns)
+        for col in cols:
+            if col not in columns:
+                # column doesn't exist in table
+                query = f"ALTER TABLE {table} ADD {col} float;"
+                cur.execute(query)
+                missing_cols.append(col)
+        logging.info(f"Adding missing columns: {', '.join(missing_cols)}")
+
+    cur.close()
+    return missing_cols
+
+def _pull_col_info(con, table, start, end, col):
+    return pd.DataFrame()
+
+def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
+    """ Try to make cols a list so you can pull multiple attr if needed
+    
+    parameter:
+    con: the psycopg2 connection to the db
+    table: most likely the ticker 
+    start: time at which data should start
+    end: time at which data should end
+    cols: the different data we need (e.g. price, sma, )
+
+    returns:
+    dataframe
+    """
+    cur = con.cursor()
+    table = table.lower()
+    
+    # missing_cols is the data you need to pull in full
+    missing_cols = _check_table_health(con, table, cols)
+    final_df = pd.DataFrame()
+    for col in missing_cols:
+        col_data =  _pull_col_info(con, table, start, end, col)
+        final_df = final_df.merge(col_data, how='outer', on='time')
+    
+    # push the df to the sql DB
+    final_df.to_sql(table, con)
+    return final_df
+
+    # check for price column
+
+    # do the actual query
+    # query = f"SELECT price FROM {ticker}"
+    # cur.execute(query)
+    # fetched = cur.fetchall()
+    # return fetched
 
 def pull_historical_data(ticker, start, end, debug=False):
     """ If there are gaps between local data and what the users need,
