@@ -8,6 +8,7 @@ import uuid
 
 from iexfinance.stocks import get_historical_data
 
+one_day = pd.Timedelta("1D")
 
 def get_data_info():
     """
@@ -52,7 +53,7 @@ def _check_table_health(con, table, cols):
         query = f"CREATE TABLE {table} (time TIMESTAMP NOT NULL{col_str}, PRIMARY KEY(time));"
         cur.execute(query)  
         con.commit()
-        logging.info(f"created missing table for {table}")
+        logging.info(f"Created missing table for {table}")
         missing_cols = cols
     else:
         missing_cols = []
@@ -62,7 +63,7 @@ def _check_table_health(con, table, cols):
         for col in cols:
             if col not in columns:
                 # column doesn't exist in table
-                query = f"ALTER TABLE {table} ADD {col} float;"
+                query = f"ALTER TABLE {table} ADD {col} {col_types.get(col, 'FLOAT')};"
                 cur.execute(query)
                 missing_cols.append(col)
         logging.info(f"Adding missing columns: {', '.join(missing_cols)}")
@@ -70,7 +71,7 @@ def _check_table_health(con, table, cols):
     cur.close()
     return missing_cols
 
-def _pull_col_info(con, table, start, end, col):
+def _pull_col_data(con, table, start, end, col):
     return pd.DataFrame()
 
 def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
@@ -81,32 +82,62 @@ def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
     table: most likely the ticker 
     start: time at which data should start
     end: time at which data should end
-    cols: the different data we need (e.g. price, sma, )
+    cols: the different data we need (e.g. price, sma,)
 
     returns:
     dataframe
     """
-    cur = con.cursor()
     table = table.lower()
-    
+    cur = con.cursor()
+
     # missing_cols is the data you need to pull in full
     missing_cols = _check_table_health(con, table, cols)
     final_df = pd.DataFrame()
-    for col in missing_cols:
-        col_data =  _pull_col_info(con, table, start, end, col)
+    for col in cols:
+        col_data = pd.DataFrame()
+
+        # was not missing, some data probably exists
+        if col not in missing_cols:
+            # figure out what time range we already have
+            query = f"SELECT MIN(time) FROM {table} WHERE {col} IS NOT NULL;"
+            cur.execute(query)
+            db_start = cur.fetchone()
+
+            query = f"SELECT MAX(time) FROM {table} WHERE {col} IS NOT NULL;"
+            cur.execute(query)
+            db_end = cur.fetchone()
+
+            if db_start is None or db_end is None:
+                raise ValueError(f"There doesn't seem to be any data in {col}, or the query didn't work.")
+
+            missing_dates = get_missing_dates(db_start, db_end, start, end)
+        else:
+            # all missing and can pull full date range
+            missing_dates = None
+
+        while missing_dates:
+                # pull missing data from source
+                start_, end_ = missing_dates.pop(0)
+                pulled_data = pull_func[col](table, start_, end_)
+                pulled_data.to_sql(table, con)
+                
+                col_data.append(pulled_data)
+
+        col_data =  _pull_col_data(con, table, start, end, col)
         final_df = final_df.merge(col_data, how='outer', on='time')
     
     # push the df to the sql DB
-    final_df.to_sql(table, con)
+    # final_df.to_sql(table, con) - shouldnt be needed if updating column wise
+    # dont want to push the whole data frame (which includes pulled data already in DB)
+    # instead, keep updating with new data and pull once
     return final_df
 
-    # check for price column
+pull_func = {"price": pull_price}
 
-    # do the actual query
-    # query = f"SELECT price FROM {ticker}"
-    # cur.execute(query)
-    # fetched = cur.fetchall()
-    # return fetched
+
+def pull_price(ticker, start, end):
+    # do stuff needed to pull the price
+    pass
 
 def pull_historical_data(ticker, start, end, debug=False):
     """ If there are gaps between local data and what the users need,
@@ -135,48 +166,59 @@ def pull_historical_data(ticker, start, end, debug=False):
         save_data_info(path_dict)
         return df
 
-    
     # have to actually read from file first to find whats missing
     # have to deal with date ranges
     file_loc = path_dict[ticker]
     df = pd.read_pickle(file_loc)
     local_start, local_end = min(df.index), max(df.index)
-    one_day = pd.Timedelta("1D")
-    temp_name = []
-    if debug: print(f"local_start: {local_start}\tlocal_end: {local_end}")
-    if end <= local_start:
-        # gap on the left, pull from (start, local_start - 1D)
-        temp_name.append((start, local_start - one_day))
-    elif start >= local_end:
-        # just get the data specified (local_end + 1D, end)
-        temp_name.append((local_end + one_day, end))
+    temp_name = get_missing_dates(local_start, local_end, start, end)
+    isnt_none = temp_name is not None
 
-    elif start >= local_start and end <= local_end:
-        # in the middle, get it from local dataframe
-        return df[start : end - one_day]
-
-    elif start < local_start and end <= local_end:
-        # grab from (start, local_start - 1D)
-        temp_name.append((start, local_start - one_day))
-
-    elif start < local_start and end > local_end:
-        # both outside, get (start, local_start - 1D) and (local_end + 1D, end)
-        temp_name.append((start, local_start - one_day))
-        temp_name.append((local_end + one_day, end))
-
-    elif start <= local_end and end > local_end:
-        # the right side is peaking out, get (local_end + 1D, end)
-        temp_name.append((local_end + one_day, end))
-
+    # should be skipped if temp_name is none, and go straight to return
     while temp_name:
         start_, end_ = temp_name.pop(0)
         if debug: print(f"Getting {ticker} from IEX with start {start_} and end {end_}")
         df_ = get_historical_data(ticker, start_, end_, output_format="pandas")
         df = pd.concat([df, df_], axis=0)
+    
+    # only sort and pickle if we actually added some data
+    if isnt_none:
+        df = df.sort_index()
+        df.to_pickle(file_loc)
 
-    df = df.sort_index()
-    df.to_pickle(file_loc)
     return df[start : end - one_day]  # remove all the + one_day and put them in df_ line
+
+
+
+def get_missing_dates(db_start, db_end, start, end, debug=False):
+    missing_dates = []
+    if debug: print(f"db_start: {db_start}\tdb_end: {db_end}")
+    
+    if end <= db_start:
+        # gap on the left, pull from (start, db_start - 1D)
+        missing_dates.append((start, db_start - one_day))
+    elif start >= db_end:
+        # just get the data specified (db_end + 1D, end)
+        missing_dates.append((db_end + one_day, end))
+
+    elif start >= db_start and end <= db_end:
+        # in the middle, get it from local dataframe
+        return None
+
+    elif start < db_start and end <= db_end:
+        # grab from (start, db_start - 1D)
+        missing_dates.append((start, db_start - one_day))
+
+    elif start < db_start and end > db_end:
+        # both outside, get (start, db_start - 1D) and (db_end + 1D, end)
+        missing_dates.append((start, db_start - one_day))
+        missing_dates.append((db_end + one_day, end))
+
+    elif start <= db_end and end > db_end:
+        # the right side is peaking out, get (db_end + 1D, end)
+        missing_dates.append((db_end + one_day, end))
+
+    return missing_dates
 
 def get_sma(
     ticker:str, 
