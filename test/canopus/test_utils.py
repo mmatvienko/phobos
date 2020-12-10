@@ -1,5 +1,5 @@
 import unittest
-import datetime, logging, sys
+import datetime, logging, sys, os
 import pytest
 
 import pandas as pd
@@ -9,6 +9,7 @@ from canopus.utils import (
     pull_historical_data, 
     _check_table_health,
     timestamp_to_date,
+    pull_data_sql,
     )
 from canopus.secrets import set_test_env
 
@@ -45,6 +46,80 @@ class TestTableHealth(unittest.TestCase):
         cols = _check_table_health(self.con, "spy", ["price", "sma"])
         assert ("sma" in cols)
 
+    def test_col_types(self):
+        # verify that an entry in the col_types dict modifies behavior
+        assert False
+
+
+class TestGetMissingDates(unittest.TestCase):
+    def setUp(self):
+        self.db_left = pd.Timestamp("2020-01-01")
+        self.db_right = pd.Timestamp("2020-02-01")
+
+    def test_left_out(self):
+        left = pd.Timestamp("2019-01-01")
+        right = pd.Timestamp("2020-01-15")
+
+    def test_right_out(self):
+        left = pd.Timestamp("2020-01-15")
+        right = pd.Timestamp("2021-01-01")
+
+    def test_both_out(self):
+        left = pd.Timestamp("2019-01-01")
+        right = pd.Timestamp("2021-01-01")
+
+    def test_both_in(self):
+        left = pd.Timestamp("2020-01-05")
+        right = pd.Timestamp("2020-01-15")
+
+    def test_both_left(self):
+        left = pd.Timestamp("2019-01-01")
+        right = pd.Timestamp("2019-02-01")
+
+    def test_both_right(self):
+        left = pd.Timestamp("2021-01-01")
+        right = pd.Timestamp("2021-02-01")
+
+    def test_invalid_order(self):
+        left = pd.Timestamp("2022-01-01")
+        right = pd.Timestamp("2019-01-01")
+        with pytest.raises(ValueError):
+            pass
+
+
+class TestPullColData(unittest.TestCase):
+    """ check health should have run before this,
+    so no need to do any column checks. 
+    """
+    def test_pull_single_col(self):
+        pass
+
+    def test_pull_multi_col(self):
+        pass
+
+
+class TestPullDataSql(unittest.TestCase):
+    def setUp(self):
+        self.con = psql.connect(
+            host="localhost", 
+            user="marcmatvienko",
+            database="testing", 
+            password=None, 
+        ) 
+        print(f"connection established to testing db")
+        
+    def test_pull_sql(self):
+        res = pull_data_sql(
+            con=self.con,
+            table="SPY", 
+            start=pd.Timestamp("2020-01-01"), 
+            end=pd.Timestamp("2020-02-02"),
+        )
+        assert False
+        print(res)
+        
+
+
 class TestPullHistorical(unittest.TestCase):
     def test_pull(self):
         ticker = "GOOG"
@@ -61,28 +136,7 @@ class TestPullHistorical(unittest.TestCase):
         df = pull_historical_data(ticker,pd.Timestamp("2019-01-15"), end)
         assert len(df) == 12
 
-    def test_pull_sql(self):
-        import psycopg2 as psql
 
-        if not os.environ["ENV_TYPE"]:
-            raise ValueError("ENV_TYPE environment variable is not set, but is needed to run")
-        
-        db_name = os.environ["ENV_TYPE"] + "_db"
-        con = psql.connect(
-            host="localhost", 
-            user="marcmatvienko",
-            database=db_name, 
-            password=None, 
-        )
-        print(f"connection established to {db_name}")
-        res = pull_data_sql(
-            con=con,
-            table="SPY", 
-            start=pd.Timestamp("2020-01-01"), 
-            end=pd.Timestamp("2020-02-02"),
-        )
-        print(res)
-        
     def test_convert(self):
         ts = pd.Timestamp("2020-02-01")
         recon = timestamp_to_date(ts.value/1e9)
