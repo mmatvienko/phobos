@@ -10,6 +10,7 @@ from canopus.utils import (
     _check_table_health,
     timestamp_to_date,
     pull_data_sql,
+    get_missing_dates,
     )
 from canopus.secrets import set_test_env
 
@@ -59,32 +60,60 @@ class TestGetMissingDates(unittest.TestCase):
     def test_left_out(self):
         left = pd.Timestamp("2019-01-01")
         right = pd.Timestamp("2020-01-15")
-
+        dates = get_missing_dates(self.db_left, self.db_right, left, right)
+        assert (
+            dates[0][0] == left and 
+            dates[0][1] == self.db_left - pd.Timedelta("1D")
+            )
     def test_right_out(self):
         left = pd.Timestamp("2020-01-15")
         right = pd.Timestamp("2021-01-01")
+        dates = get_missing_dates(self.db_left, self.db_right, left, right)
+        assert (
+            dates[0][0] == self.db_right + pd.Timedelta("1D") and 
+            dates[0][1] == right
+            )
 
     def test_both_out(self):
         left = pd.Timestamp("2019-01-01")
         right = pd.Timestamp("2021-01-01")
+        dates = get_missing_dates(self.db_left, self.db_right, left, right)
+        assert (
+            dates[0][0] == left and 
+            dates[0][1] == self.db_left - pd.Timedelta("1D") and 
+            dates[1][0] == self.db_right + pd.Timedelta("1D") and
+            dates[1][1] == right
+            )
 
     def test_both_in(self):
         left = pd.Timestamp("2020-01-05")
         right = pd.Timestamp("2020-01-15")
+        dates = get_missing_dates(self.db_left, self.db_right, left, right)
+        assert dates is None
 
     def test_both_left(self):
         left = pd.Timestamp("2019-01-01")
         right = pd.Timestamp("2019-02-01")
+        dates = get_missing_dates(self.db_left, self.db_right, left, right)
+        assert (
+            dates[0][0] == left and 
+            dates[0][1] == self.db_left - pd.Timedelta("1D")
+            )
 
     def test_both_right(self):
         left = pd.Timestamp("2021-01-01")
         right = pd.Timestamp("2021-02-01")
+        dates = get_missing_dates(self.db_left, self.db_right, left, right)
+        assert (
+            dates[0][0] == self.db_right + pd.Timedelta("1D") and 
+            dates[0][1] == right
+            )
 
     def test_invalid_order(self):
         left = pd.Timestamp("2022-01-01")
         right = pd.Timestamp("2019-01-01")
         with pytest.raises(ValueError):
-            pass
+            get_missing_dates(self.db_left, self.db_right, left, right)
 
 
 class TestPullColData(unittest.TestCase):

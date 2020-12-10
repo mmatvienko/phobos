@@ -132,12 +132,11 @@ def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
     # instead, keep updating with new data and pull once
     return final_df
 
-pull_func = {"price": pull_price}
-
-
 def pull_price(ticker, start, end):
     # do stuff needed to pull the price
-    pass
+    return pd.DataFrame()
+
+pull_func = {"price": pull_price}
 
 def pull_historical_data(ticker, start, end, debug=False):
     """ If there are gaps between local data and what the users need,
@@ -191,6 +190,9 @@ def pull_historical_data(ticker, start, end, debug=False):
 
 
 def get_missing_dates(db_start, db_end, start, end, debug=False):
+    if start > end:
+        raise ValueError(f"The start date {start} cannot be after the end date {end}.")
+
     missing_dates = []
     if debug: print(f"db_start: {db_start}\tdb_end: {db_end}")
     
