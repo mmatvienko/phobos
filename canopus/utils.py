@@ -2,13 +2,14 @@ from canopus.secrets import ALPHA_VANTAGE
 from datetime import date, timedelta, datetime
 
 import pandas as pd
-import os, logging
-import json
-import uuid
+import os, logging, time, json, uuid
 
 from iexfinance.stocks import get_historical_data
+from alpha_vantage.techindicators import TechIndicators
+
 
 one_day = pd.Timedelta("1D")
+
 
 def get_data_info():
     """
@@ -71,13 +72,47 @@ def _check_table_health(con, table, cols):
     cur.close()
     return missing_cols
 
-def _pull_col_data(con, table, start, end, col):
-    return pd.DataFrame()
+def _pull_col_data(table, col, **kwargs):
+    """ Pulls data from appropriate source 
+    in preperation to append to sql db
+
+    parameters:
+    col: name of the data needed to be pulled
+
+    return:
+    df containing the row of needed information and perhaps more
+    """
+    if col.lower() in ("open", "close", "low", "high", "volume"):
+        try:
+            start = kwargs["start"]
+            end = kwargs["end"]
+        except:
+            raise KeyError(f"When pulling {col} data, you should include start and end times in kwargs")
+        df = get_historical_data(table, start, end, output_format='pandas')[col]
+
+    elif col.lower()[:3] == "sma":
+        try:
+            time_periods = int(col[3:])
+            interval = kwargs["interval"]
+        except ValueError:
+            raise ValueError(f"Name of column starting with 'sma' has to end with an int, not {col[3:]}")
+        except KeyError:
+            raise KeyError(f"When data {col}, kwargs should include 'interval'")
+        
+        sma = TechIndicators(key=ALPHA_VANTAGE, output_format="pandas").get_sma(
+            table, 
+            interval=interval,   # something like "daily"
+            time_period=time_periods,  # would capture 20 in sma20
+        )
+        df = pd.DataFrame(sma[0])    # apparently sma[0] _could_ be a string
+        df.index = pd.DatetimeIndex(df.index)
+
+    return df
 
 def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
     """ Try to make cols a list so you can pull multiple attr if needed
     
-    parameter:
+    parameters:
     con: the psycopg2 connection to the db
     table: most likely the ticker 
     start: time at which data should start
@@ -89,6 +124,7 @@ def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
     """
     table = table.lower()
     cur = con.cursor()
+    # kwargs = 
 
     # missing_cols is the data you need to pull in full
     missing_cols = _check_table_health(con, table, cols)
@@ -118,12 +154,14 @@ def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
         while missing_dates:
                 # pull missing data from source
                 start_, end_ = missing_dates.pop(0)
-                pulled_data = pull_func[col](table, start_, end_)
-                pulled_data.to_sql(table, con)
+                pulled_data = _pull_col_data(table, col)
                 
+                # save data to sql and 
+                # append it to column that will part of returned df
+                pulled_data.to_sql(table, con)
                 col_data.append(pulled_data)
 
-        col_data =  _pull_col_data(con, table, start, end, col)
+        col_data =  _pull_col_data(table, start, end, col)
         final_df = final_df.merge(col_data, how='outer', on='time')
     
     # push the df to the sql DB

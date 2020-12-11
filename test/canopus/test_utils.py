@@ -11,6 +11,7 @@ from canopus.utils import (
     timestamp_to_date,
     pull_data_sql,
     get_missing_dates,
+    _pull_col_data,
     )
 from canopus.secrets import set_test_env
 
@@ -118,13 +119,62 @@ class TestGetMissingDates(unittest.TestCase):
 
 class TestPullColData(unittest.TestCase):
     """ check health should have run before this,
-    so no need to do any column checks. 
-    """
-    def test_pull_single_col(self):
-        pass
+    so no need to do any column checks.
 
-    def test_pull_multi_col(self):
-        pass
+    WLOG will test for 'price' only
+    """
+    def setUp(self):
+        self.con = psql.connect(
+            host="localhost", 
+            user="marcmatvienko",
+            database="testing", 
+            password=None, 
+        ) 
+    def test_pull_price(self):
+        kwargs = {
+            "start": pd.Timestamp("2020-01-02"), 
+            "end": pd.Timestamp("2020-01-03"),
+            }
+        df = _pull_col_data(
+            table="spy", 
+            col="open",
+            **kwargs,
+        )
+
+        index = pd.date_range(
+            start=pd.Timestamp("2020-01-02"),
+            periods=2,
+            freq="1D"
+        )
+        # can't really compare prices since the testing API is random
+        assert all(index == df.index)
+
+    def test_pull_badkwargs(self):
+        kwargs = {}
+        
+        # open data
+        with pytest.raises(KeyError):
+            _pull_col_data(
+                table="spy", 
+                col="open",
+                **kwargs,
+            )
+            _pull_col_data(
+                table="spy", 
+                col="sma20",
+                **kwargs,
+            )  
+
+    def test_pull_sma(self):
+        kwargs = {"interval": "daily"}
+        df = _pull_col_data(
+            table="spy",
+            col="sma50",
+            **kwargs,
+        )
+        expected = {0: 95.7273, 234:94.0212, 3333: 132.4932}
+        for loc in expected:
+            assert df.iloc[loc]["SMA"] == expected[loc]
 
 
 class TestPullDataSql(unittest.TestCase):
