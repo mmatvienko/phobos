@@ -4,6 +4,7 @@ from titan.security import Security
 class DumbBroker(Broker):
     def __init__(self):
         self.broker_name = "dumb"
+        self.cash = 100_000
 
     def open(self, ticker, amt, price=None, timestamp=None):
         """ open a position. whether it be buy to open or sell
@@ -15,4 +16,4 @@ class DumbBroker(Broker):
 
     def close(self, ticker, amt, price=None, timestamp=None):
         price = Security(ticker).get_price(timestamp=timestamp)
-        return  (amt, price)        
+        return  (amt, price)
