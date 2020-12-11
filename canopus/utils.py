@@ -72,7 +72,7 @@ def _check_table_health(con, table, cols):
     cur.close()
     return missing_cols
 
-def _pull_col_data(table, col, **kwargs):
+def _pull_col_data(table, col, start, end):
     """ Pulls data from appropriate source 
     in preperation to append to sql db
 
@@ -84,8 +84,8 @@ def _pull_col_data(table, col, **kwargs):
     """
     if col.lower() in ("open", "close", "low", "high", "volume"):
         try:
-            start = kwargs["start"]
-            end = kwargs["end"]
+            start = start
+            end = end
         except:
             raise KeyError(f"When pulling {col} data, you should include start and end times in kwargs")
         df = get_historical_data(table, start, end, output_format='pandas')[col]
@@ -93,7 +93,7 @@ def _pull_col_data(table, col, **kwargs):
     elif col.lower()[:3] == "sma":
         try:
             time_periods = int(col[3:])
-            interval = kwargs["interval"]
+            interval = "daily"
         except ValueError:
             raise ValueError(f"Name of column starting with 'sma' has to end with an int, not {col[3:]}")
         except KeyError:
@@ -106,7 +106,10 @@ def _pull_col_data(table, col, **kwargs):
         )
         df = pd.DataFrame(sma[0])    # apparently sma[0] _could_ be a string
         df.index = pd.DatetimeIndex(df.index)
+    else:
+        raise ValueError(f"Pulling {col} data is not yet supported")
 
+    df.index = df.index.rename("time")
     return df
 
 def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
@@ -124,12 +127,14 @@ def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
     """
     table = table.lower()
     cur = con.cursor()
-    # kwargs = 
 
     # missing_cols is the data you need to pull in full
     missing_cols = _check_table_health(con, table, cols)
-    final_df = pd.DataFrame()
+    final_df = pd.DataFrame([], index=pd.DatetimeIndex([]))
+    final_df.index.name = "time"
+
     for col in cols:
+        print(f"Col: {col}")
         col_data = pd.DataFrame()
 
         # was not missing, some data probably exists
@@ -142,39 +147,74 @@ def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
             query = f"SELECT MAX(time) FROM {table} WHERE {col} IS NOT NULL;"
             cur.execute(query)
             db_end = cur.fetchone()
-
+            
             if db_start is None or db_end is None:
                 raise ValueError(f"There doesn't seem to be any data in {col}, or the query didn't work.")
 
             missing_dates = get_missing_dates(db_start, db_end, start, end)
+        # all missing and can pull full date range
         else:
-            # all missing and can pull full date range
             missing_dates = None
 
         while missing_dates:
                 # pull missing data from source
                 start_, end_ = missing_dates.pop(0)
-                pulled_data = _pull_col_data(table, col)
-                
+                pulled_data = _pull_col_data(table, col, start_, end_)
+                # pulled_data.index = pulled_data.index.rename("time")
+
                 # save data to sql and 
                 # append it to column that will part of returned df
-                pulled_data.to_sql(table, con)
+                series_to_sql(pulled_data, con, table)
+                # pulled_data.to_sql(table, con)
                 col_data.append(pulled_data)
 
-        col_data =  _pull_col_data(table, start, end, col)
-        final_df = final_df.merge(col_data, how='outer', on='time')
+        col_data = _pull_col_data(table, col, start, end)
+        series_to_sql(col_data, con, table)
+
+        final_df = final_df.merge(
+            col_data, how='outer', on='time'
+        )
+        con.commit()
     
-    # push the df to the sql DB
-    # final_df.to_sql(table, con) - shouldnt be needed if updating column wise
-    # dont want to push the whole data frame (which includes pulled data already in DB)
-    # instead, keep updating with new data and pull once
     return final_df
 
-def pull_price(ticker, start, end):
-    # do stuff needed to pull the price
-    return pd.DataFrame()
 
-pull_func = {"price": pull_price}
+def _build_query(values, table: str, col: str):
+    """ build query """
+    if not (isinstance(table, str) and isinstance(col, str)):
+        raise ValueError(f"table: {table} or col: {col} aren't strings.")
+
+    query = f"INSERT INTO {table} (time, {col}) VALUES "
+    val_list = []
+    for idx, val in values.items():
+        # for different types, decide to have quotes or not
+        # like '{idx}' -vs- {val}
+        val_list.append(f"('{idx}', {val})")
+
+    query += ",".join(val_list)
+    query += ';'
+    
+    return query
+
+
+def series_to_sql(s: pd.Series, con, table, chunk_size=10):
+    """ Goal is for the series to be updated to the db """
+    cur = con.cursor()
+
+    for i in range(0, len(s), chunk_size):
+        query = _build_query(
+            s.iloc[i: i + chunk_size],
+            table,
+            s.name,
+        )
+        print(f"exectuing:\n {query}")
+        cur.execute(query)
+
+# def pull_price(ticker, start, end):
+#     # do stuff needed to pull the price
+#     return pd.DataFrame()
+
+# pull_func = {"price": pull_price}
 
 def pull_historical_data(ticker, start, end, debug=False):
     """ If there are gaps between local data and what the users need,

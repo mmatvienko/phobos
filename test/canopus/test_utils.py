@@ -188,15 +188,19 @@ class TestPullDataSql(unittest.TestCase):
         print(f"connection established to testing db")
         
     def test_pull_sql(self):
+        cur = self.con.cursor()
+        # cur.execute("DROP TABLE IF EXISTS spy")    
+        # cur.execute("CREATE TABLE spy (time TIMESTAMP NOT NULL, PRIMARY KEY(time));")        
+
         res = pull_data_sql(
             con=self.con,
             table="SPY", 
             start=pd.Timestamp("2020-01-01"), 
             end=pd.Timestamp("2020-02-02"),
+            cols=["close"],
         )
+        print(res)        
         assert False
-        print(res)
-        
 
 
 class TestPullHistorical(unittest.TestCase):
