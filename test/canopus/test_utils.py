@@ -195,9 +195,9 @@ class TestPullDataSql(unittest.TestCase):
         res = pull_data_sql(
             con=self.con,
             table="SPY", 
-            start=pd.Timestamp("2020-01-01"), 
-            end=pd.Timestamp("2020-02-02"),
-            cols=["close"],
+            start=pd.Timestamp("2020-02-02"), 
+            end=pd.Timestamp("2020-03-01"),
+            cols=["open"],
         )
         print(res)        
         assert False

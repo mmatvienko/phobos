@@ -134,7 +134,6 @@ def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
     final_df.index.name = "time"
 
     for col in cols:
-        print(f"Col: {col}")
         col_data = pd.DataFrame()
 
         # was not missing, some data probably exists
@@ -142,15 +141,15 @@ def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
             # figure out what time range we already have
             query = f"SELECT MIN(time) FROM {table} WHERE {col} IS NOT NULL;"
             cur.execute(query)
-            db_start = cur.fetchone()
+            db_start = cur.fetchone()[0]
 
             query = f"SELECT MAX(time) FROM {table} WHERE {col} IS NOT NULL;"
             cur.execute(query)
-            db_end = cur.fetchone()
+            db_end = cur.fetchone()[0]
             
             if db_start is None or db_end is None:
                 raise ValueError(f"There doesn't seem to be any data in {col}, or the query didn't work.")
-
+            import ipdb; ipdb.set_trace()
             missing_dates = get_missing_dates(db_start, db_end, start, end)
         # all missing and can pull full date range
         else:
@@ -184,23 +183,32 @@ def _build_query(values, table: str, col: str):
     if not (isinstance(table, str) and isinstance(col, str)):
         raise ValueError(f"table: {table} or col: {col} aren't strings.")
 
-    query = f"INSERT INTO {table} (time, {col}) VALUES "
-    val_list = []
+    # query = f"INSERT INTO {table} (time, {col}) VALUES "
+    # val_list = []
+    # for idx, val in values.items():
+    #     # for different types, decide to have quotes or not
+    #     # like '{idx}' -vs- {val}
+    #     val_list.append(f"('{idx}', {val})")
+
+    # query += ",".join(val_list)
+    # query += " ON CONFLICT (time) DO UPDATE"
+    # query += ';'
+    query_list = []
     for idx, val in values.items():
         # for different types, decide to have quotes or not
         # like '{idx}' -vs- {val}
-        val_list.append(f"('{idx}', {val})")
+        update_query = f"UPDATE SET {col}={val};"
+        query = f"INSERT INTO {table} (time, {col}) VALUES ('{idx}', {val}) ON CONFLICT (time) DO {update_query}"
+        query_list.append(query)
 
-    query += ",".join(val_list)
-    query += ';'
-    
+    query += "\n".join(query_list)
+    query += ';'    
     return query
 
 
 def series_to_sql(s: pd.Series, con, table, chunk_size=10):
     """ Goal is for the series to be updated to the db """
     cur = con.cursor()
-
     for i in range(0, len(s), chunk_size):
         query = _build_query(
             s.iloc[i: i + chunk_size],
