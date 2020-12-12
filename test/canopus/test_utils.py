@@ -6,7 +6,7 @@ import pandas as pd
 import psycopg2 as psql
 
 from canopus.utils import (
-    pull_historical_data, 
+    # pull_historical_data, 
     _check_table_health,
     timestamp_to_date,
     pull_data_sql,
@@ -166,11 +166,9 @@ class TestPullColData(unittest.TestCase):
             )  
 
     def test_pull_sma(self):
-        kwargs = {"interval": "daily"}
         df = _pull_col_data(
             table="spy",
             col="sma50",
-            **kwargs,
         )
         expected = {0: 95.7273, 234:94.0212, 3333: 132.4932}
         for loc in expected:
@@ -187,47 +185,37 @@ class TestPullDataSql(unittest.TestCase):
         ) 
         print(f"connection established to testing db")
         
-    def test_pull_sql(self):
+    def test_pull_single_col(self):
         cur = self.con.cursor()
-        # cur.execute("DROP TABLE IF EXISTS spy")    
-        # cur.execute("CREATE TABLE spy (time TIMESTAMP NOT NULL, PRIMARY KEY(time));")        
+        cur.execute("DROP TABLE IF EXISTS spy")    
+        cur.execute("CREATE TABLE spy (time TIMESTAMP NOT NULL, PRIMARY KEY(time));")        
 
+        res1 = pull_data_sql(
+            con=self.con,
+            table="SPY", 
+            start=pd.Timestamp("2020-01-01"), 
+            end=pd.Timestamp("2020-02-01"),
+            cols=["open"],
+        )
+
+        # make sure this one doesn't call iex
+        res2 = pull_data_sql(
+            con=self.con,
+            table="SPY", 
+            start=pd.Timestamp("2020-01-01"), 
+            end=pd.Timestamp("2020-02-01"),
+            cols=["open"],
+        )
+        # wouldnt be different since iex API gives different results every time
+        assert all(res1 == res2)
+
+    def test_pull_multi_col(self):
         res = pull_data_sql(
             con=self.con,
             table="SPY", 
-            start=pd.Timestamp("2020-02-02"), 
-            end=pd.Timestamp("2020-03-01"),
-            cols=["open"],
+            start=pd.Timestamp("2020-02-01"), 
+            end=pd.Timestamp("2020-02-03"),
+            cols=["open", "close"],
         )
-        print(res)        
-        assert False
-
-
-class TestPullHistorical(unittest.TestCase):
-    def test_pull(self):
-        ticker = "GOOG"
-        start = pd.Timestamp("2019-01-01")
-        end = pd.Timestamp("2019-02-01")
-
-        df = pull_historical_data(ticker, start, end)
-        assert len(df) == 21
-
-        end_ = pd.Timestamp("2019-03-01")
-        df = pull_historical_data(ticker, start, end_)
-        assert len(df) == 40
-
-        df = pull_historical_data(ticker,pd.Timestamp("2019-01-15"), end)
-        assert len(df) == 12
-
-
-    def test_convert(self):
-        ts = pd.Timestamp("2020-02-01")
-        recon = timestamp_to_date(ts.value/1e9)
-        assert ts == pd.Timestamp(recon)
-
-    def test_errors(self):
-        with pytest.raises(ValueError):
-            pull_historical_data("GOOG", "2019-01-01", pd.Timestamp("2019-01-01"))
-        with pytest.raises(ValueError):
-            pull_historical_data("GOOG", pd.Timestamp("2019-01-01"), "2019-01-01")
-
+        assert res.shape == (1,2)
+        assert isinstance(res["open"].item(), float)

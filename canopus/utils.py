@@ -112,6 +112,19 @@ def _pull_col_data(table, col, start, end):
     df.index = df.index.rename("time")
     return df
 
+
+def _next_trading_day(date):
+    """ Gets the next trading day """
+    # TODO implement and use in pull_data_sql
+    return date
+
+
+def _previous_trading_day(date):
+    """ Gets the previous trading day"""
+    # TODO implement and use in pull_data_sql
+    return date
+
+
 def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
     """ Try to make cols a list so you can pull multiple attr if needed
     
@@ -134,7 +147,7 @@ def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
     final_df.index.name = "time"
 
     for col in cols:
-        col_data = pd.DataFrame()
+        col_data = pd.DataFrame([], index=pd.DatetimeIndex([], name='time'))
 
         # was not missing, some data probably exists
         if col not in missing_cols:
@@ -146,64 +159,58 @@ def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
             query = f"SELECT MAX(time) FROM {table} WHERE {col} IS NOT NULL;"
             cur.execute(query)
             db_end = cur.fetchone()[0]
+            print(f"db_start:{db_start}\tdb_end: {db_end}")
             
             if db_start is None or db_end is None:
                 raise ValueError(f"There doesn't seem to be any data in {col}, or the query didn't work.")
-            import ipdb; ipdb.set_trace()
             missing_dates = get_missing_dates(db_start, db_end, start, end)
+        
         # all missing and can pull full date range
         else:
-            missing_dates = None
+            missing_dates = []
 
+        # if not all missing, pull from start to end
+        if missing_dates or missing_dates is None:
+            # if missing dates is set, it means the column has some set of 
+            # continuous data that we will need later
+            query = f"SELECT time, {col} FROM {table} WHERE time >= '{start}' AND time <= '{end}'"
+            cur.execute(query)
+            res = cur.fetchall()
+            pulled = pd.DataFrame(
+                [x[1] for x in res],
+                columns=[col],
+                index=pd.DatetimeIndex([x[0] for x in res], name='time'),
+            )
+            col_data = col_data.append(pulled)
+        elif missing_dates == []:
+            # ALL dates are missing, can pull from source and push to db
+            col_data = _pull_col_data(table, col, start, end)
+            series_to_sql(col_data, con, table)
+        
         while missing_dates:
                 # pull missing data from source
                 start_, end_ = missing_dates.pop(0)
-                pulled_data = _pull_col_data(table, col, start_, end_)
+                
+                if start_ == end_:
+                    continue
+                
+                pulled_data = _pull_col_data(table, col, start_, end_) # should be sql pull
                 # pulled_data.index = pulled_data.index.rename("time")
 
-                # save data to sql and 
-                # append it to column that will part of returned df
-                series_to_sql(pulled_data, con, table)
-                # pulled_data.to_sql(table, con)
-                col_data.append(pulled_data)
+                # could get NaN data if using non trading days
+                if not pulled_data.empty:
+                    # save data to sql and 
+                    # append it to column that will part of returned df
+                    series_to_sql(pulled_data, con, table)
+                    # pulled_data.to_sql(table, con)
+                    col_data = col_data.append(pulled_data)  
+        con.commit()
 
-        col_data = _pull_col_data(table, col, start, end)
-        series_to_sql(col_data, con, table)
-
+        # right here pull last time
         final_df = final_df.merge(
             col_data, how='outer', on='time'
         )
-        con.commit()
-    
-    return final_df
-
-
-def _build_query(values, table: str, col: str):
-    """ build query """
-    if not (isinstance(table, str) and isinstance(col, str)):
-        raise ValueError(f"table: {table} or col: {col} aren't strings.")
-
-    # query = f"INSERT INTO {table} (time, {col}) VALUES "
-    # val_list = []
-    # for idx, val in values.items():
-    #     # for different types, decide to have quotes or not
-    #     # like '{idx}' -vs- {val}
-    #     val_list.append(f"('{idx}', {val})")
-
-    # query += ",".join(val_list)
-    # query += " ON CONFLICT (time) DO UPDATE"
-    # query += ';'
-    query_list = []
-    for idx, val in values.items():
-        # for different types, decide to have quotes or not
-        # like '{idx}' -vs- {val}
-        update_query = f"UPDATE SET {col}={val};"
-        query = f"INSERT INTO {table} (time, {col}) VALUES ('{idx}', {val}) ON CONFLICT (time) DO {update_query}"
-        query_list.append(query)
-
-    query += "\n".join(query_list)
-    query += ';'    
-    return query
+    return final_df.sort_index(ascending=True)
 
 
 def series_to_sql(s: pd.Series, con, table, chunk_size=10):
@@ -218,61 +225,22 @@ def series_to_sql(s: pd.Series, con, table, chunk_size=10):
         print(f"exectuing:\n {query}")
         cur.execute(query)
 
-# def pull_price(ticker, start, end):
-#     # do stuff needed to pull the price
-#     return pd.DataFrame()
 
-# pull_func = {"price": pull_price}
+def _build_query(values, table: str, col: str):
+    """ build query string """
+    if not (isinstance(table, str) and isinstance(col, str)):
+        raise ValueError(f"table: {table} or col: {col} aren't strings.")
 
-def pull_historical_data(ticker, start, end, debug=False):
-    """ If there are gaps between local data and what the users need,
-    we will fill in those gaps
-    TODO:    needs extensive testing
-    TODO:    needs to handle when start or end include nontrading days
-    """
-    if not isinstance(start, pd.Timestamp):
-        raise ValueError("start time has to be a pandas Timestamp")
-    if not isinstance(end, pd.Timestamp):
-        raise ValueError("end time has to be a pandas Timestamp")
-    
-    path_dict = get_data_info()
+    query_list = []
+    for idx, val in values.items():
+        # for different types, decide to have quotes or not
+        # like '{idx}' -vs- {val}
+        update_query = f"UPDATE SET {col}={val};"
+        query = f"INSERT INTO {table} (time, {col}) VALUES ('{idx}', {val}) ON CONFLICT (time) DO {update_query}"
+        query_list.append(query)
 
-    if ticker not in path_dict:
-        # doesnt exist yet, can just read in the whole thing and save it
-        print(f"Got {ticker} info from IEX")
-        file_loc = os.path.join(os.path.dirname(__file__), "data", os.environ["ENV_TYPE"], str(uuid.uuid1()) + ".pkl")
-
-        df = get_historical_data(ticker, start, end, output_format='pandas')
-        df.to_pickle(file_loc)
-
-        path_dict[ticker] = file_loc
-        if debug: print(f"Got {ticker} info from local store")
-
-        save_data_info(path_dict)
-        return df
-
-    # have to actually read from file first to find whats missing
-    # have to deal with date ranges
-    file_loc = path_dict[ticker]
-    df = pd.read_pickle(file_loc)
-    local_start, local_end = min(df.index), max(df.index)
-    temp_name = get_missing_dates(local_start, local_end, start, end)
-    isnt_none = temp_name is not None
-
-    # should be skipped if temp_name is none, and go straight to return
-    while temp_name:
-        start_, end_ = temp_name.pop(0)
-        if debug: print(f"Getting {ticker} from IEX with start {start_} and end {end_}")
-        df_ = get_historical_data(ticker, start_, end_, output_format="pandas")
-        df = pd.concat([df, df_], axis=0)
-    
-    # only sort and pickle if we actually added some data
-    if isnt_none:
-        df = df.sort_index()
-        df.to_pickle(file_loc)
-
-    return df[start : end - one_day]  # remove all the + one_day and put them in df_ line
-
+    query += "\n".join(query_list)
+    return query
 
 
 def get_missing_dates(db_start, db_end, start, end, debug=False):

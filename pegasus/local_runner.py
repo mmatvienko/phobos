@@ -4,7 +4,7 @@ import logging, sys
 
 from pegasus.strategies.sma import SMA
 from titan.portfolio import Portfolio
-from canopus.utils import set_test_env
+from canopus.secrets import set_test_env
 
 
 def run():
