@@ -1,6 +1,8 @@
+import logging, sys
+
 import pandas as pd
 import trading_calendars as tc
-import logging, sys
+import matplotlib.pyplot as plt
 
 from pegasus.strategies.sma import SMA
 from titan.portfolio import Portfolio
@@ -12,22 +14,33 @@ def run():
     nasdaq = tc.get_calendar("NASDAQ")
 
     final_date = None
-    for date in pd.date_range(start=pd.Timestamp('2019-01-01'), periods=100, freq="1D"):
+    for date in pd.date_range(start=pd.Timestamp('2019-01-01'), periods=360, freq="1D"):
 
         if not nasdaq.is_session(date):
             logging.info(f"Skipping {date}")
             continue
         logging.info(f'Running on {date}')
 
-        
         strat.run(timestamp=date)
         final_date = date
 
-    print(strat.portfolio.evaluate(date=final_date))
+    print(strat.portfolio.evaluate(timestamp=final_date))
     print(strat.portfolio.cash)
+    df = strat.get_results()
+    fig = plt.figure()
+    # do plotting stuff
+    for col in df.columns:
+        if col == "pv":
+            df[col].plot(secondary_y=True, legend=True)
+        else:
+            df[col].plot(legend=True)
+        plt.legend(col)
+
+    plt.show()
+
 if __name__ == "__main__":
     set_test_env()
-
+    
     # setup logging logic
     file_handler = logging.FileHandler(filename='tmp.log')
     stdout_handler = logging.StreamHandler(sys.stdout)

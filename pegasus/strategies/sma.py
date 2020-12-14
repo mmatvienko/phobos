@@ -15,6 +15,7 @@ class SMA():
         self.portfolio = portfolio
         self.run_name = run_name
         self.tickers = tickers
+        self.results = pd.DataFrame(index=pd.DatetimeIndex([], name="time"), columns=["sma50", "sma200", "price", "pv"])
 
     def run(self, timestamp: pd.Timestamp=None):
         """  Given some time, run the strategy at that time.
@@ -24,19 +25,42 @@ class SMA():
         for tick in self.tickers:
             sec = Security(tick)
             short_days = 50
-            short_sma = sec.get_sma("daily", short_days, timestamp=timestamp)
+            short_sma = sec.get_sma(
+                short_days, 
+                timestamp=timestamp,
+                )
             long_days = 200
-            long_sma = sec.get_sma("daily", long_days, timestamp=timestamp)
-            
-            logging.info(f"SMA{short_days} = {short_sma}\tSMA{long_sma} = {long_sma}")
+            long_sma = sec.get_sma(
+                long_days, 
+                timestamp=timestamp,
+                )            
+            logging.info(f"SMA{short_days} = {short_sma.item()}\tSMA{long_days} = {long_sma.item()}")
             # if sma 50 < sma 200, sell
-            if short_sma > long_sma:
+            if short_sma < long_sma:
                 # go short
                 self.portfolio.close_pos(tick, timestamp=timestamp)
 
-            elif short_sma < long_sma:
+            elif short_sma > long_sma:
                 # go long
                 self.portfolio.order(tick, 10, timestamp=timestamp)
+
+            row = pd.Series({
+                "sma50": short_sma,
+                "sma200": long_sma,
+                "price": sec.get_price(timestamp=timestamp),
+                "pv": self.portfolio.evaluate(timestamp=timestamp),
+            }, name=timestamp)
+
+            self.results = self.results.append(
+                row,
+                ignore_index=False,
+            )
+            
+
+    def get_results(self):
+        # do some sort of summary.
+        # could also include some post run computations
+        return self.results
 
     def backfill(self, timestamp=None):
         """ Backfill all needed data for running step at timestamp
