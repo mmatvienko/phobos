@@ -3,14 +3,31 @@ from canopus import utils
 from iexfinance.stocks import Stock
 
 import pandas as pd
-import time
+import time, os, logging
+import psycopg2 as psql
 
 class Security():
     """ Maybe make a static class"""
     def __init__(self, ticker):
         self.ticker = ticker
         self.data_source = None
+        self.con = psql.connect(
+            host="localhost", 
+            user="marcmatvienko",
+            database=os.environ["ENV_TYPE"]+"_db", 
+            password=None, 
+        )
+        self.con.autocommit = True # issue at _check_table_health, 
+                                   # transaction started but not committed
 
+        try:
+            # TODO check if exists rather than try except.
+            with self.con.cursor() as cur:
+                cur.execute(f"CREATE TABLE {self.ticker} (time TIMESTAMP NOT NULL, PRIMARY KEY(time));")        
+            self.con.commit()
+        except:
+            logging.info("Didn't create new table, exists.")
+        
     def get_price(self, timestamp=None):
         """ Gets the price for a security
         ticker : str - ticker of the security
@@ -30,15 +47,19 @@ class Security():
         tmp_date = timestamp + timedelta(days=1)
         # TODO consider moving this while loop into whatever is calling `get_price`
         while ret is None:   # incase today isn't a trading day
-            ret = self.history(end=tmp_date, time_frame="1D", price_type="close")
+            ret = self.history(start=timestamp, time_frame="1D", price_type="close")
             tmp_date -= timedelta(days=1)
 
-        return ret.item()
+        try:
+            ret = ret.item()
+        except:
+            import ipdb; ipdb.set_trace()
+        return ret
 
     def history(
         self, 
-        start=None, 
-        end=date.today() + timedelta(days=1), 
+        start=date.today(), 
+        end=None, 
         time_frame="1Y", 
         price_type=None
         ):
@@ -50,10 +71,16 @@ class Security():
         price type: can be something like close or open
         """
         
-        if not start:
-            start = end - pd.Timedelta(time_frame)
+        if not end:
+            end = start # getting data from the same day
 
-        df = utils.pull_historical_data(self.ticker, start, end)
+        df = utils.pull_data_sql(
+            con=self.con,
+            table=self.ticker,
+            start=start,
+            end=end,
+            cols=[price_type],
+        )
 
         if df.empty:
             # not a trading day
@@ -67,12 +94,18 @@ class Security():
         
         return df[price_type]
 
-    def get_sma(self, interval, time_periods, timestamp:pd.Timestamp=None):
+    def get_sma(self, time_periods, interval="daily", timestamp:pd.Timestamp=None):
         """
-        interval: the amount of time between each data point
+        interval: the amount of time between each data point (DAILY)
         time_periods: number of data points used to calculated the SMA
         """
+
         # go to the database here
-        sma_frame = utils.get_sma(self.ticker, interval, time_periods, timestamp=timestamp)
-        sma = sma_frame.loc[timestamp].item()
-        return sma
+        sma_frame = utils.pull_data_sql(
+            self.con,
+            self.ticker, 
+            start=timestamp,
+            end=timestamp,
+            cols=[f"sma{time_periods}"])
+        # import ipdb; ipdb.set_trace()
+        return sma_frame[timestamp : timestamp].iloc[0, 0]

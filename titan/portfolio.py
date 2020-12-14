@@ -19,6 +19,7 @@ class Portfolio():
         self.net_value = cash
         self.min_cash = cash
         self.broker = broker
+        # TODO 
 
     def __getitem__(self, ticker):
         return self.positions[ticker]
@@ -40,7 +41,8 @@ class Portfolio():
         """
         amt, price = self.broker.open(ticker, amt=amt, price=price, timestamp=timestamp)
         p_str = f"{'SELL -' if amt < 0 else 'BUY +'} {amt}"
-        
+        if isinstance(price, pd.Series):
+            import ipdb; ipdb.set_trace()
         if price:
             logging.info(f"{p_str} {ticker} @{price}")
         else:
@@ -85,12 +87,12 @@ class Portfolio():
     def net_return(self):
         return self.net_value - self.init_cash
         
-    def evaluate(self, date=None):
+    def evaluate(self, timestamp=None):
         """ Save the worth of portfolio to a dataframe with time index"""
         self.net_value = 0
         
         for ticker in self:
-            self.net_value += Security(ticker).get_price(timestamp=date) * self[ticker]
+            self.net_value += Security(ticker).get_price(timestamp=timestamp) * self[ticker]
 
         self.net_value += self.cash
         return self.net_value
