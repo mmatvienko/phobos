@@ -58,21 +58,32 @@ def _check_table_health(con, table, cols):
         missing_cols = cols
     else:
         missing_cols = []
-        # check for price column
+        # check for column existing in db
         columns = [x[3] for x in fetched]
         logging.info(columns)
+
         for col in cols:
-            if col not in columns:
+            if col not in columns and col in allowed_cols:
                 # column doesn't exist in table
                 query = f"ALTER TABLE {table} ADD {col} {col_types.get(col, 'FLOAT')};"
                 cur.execute(query)
                 missing_cols.append(col)
-        logging.info(f"Adding missing columns: {', '.join(missing_cols)}")
+                con.commit()
+                logging.info(f"Adding missing columns: {', '.join(missing_cols)}")
 
     cur.close()
     return missing_cols
 
-def _pull_col_data(table, col, start, end):
+
+allowed_cols = ("open", "close", "low", "high", "volume", "sma")
+
+
+def _pull_col_data(
+    table: str, 
+    col: str, 
+    start: pd.Timestamp, 
+    end: pd.Timestamp
+    ) -> pd.Series:
     """ Pulls data from appropriate source 
     in preperation to append to sql db
 
@@ -80,15 +91,17 @@ def _pull_col_data(table, col, start, end):
     col: name of the data needed to be pulled
 
     return:
-    df containing the row of needed information and perhaps more
+    series containing the row of needed information and perhaps more
     """
     if col.lower() in ("open", "close", "low", "high", "volume"):
         try:
+            # identity for now, keep in case **kwargs are added back
             start = start
             end = end
         except:
             raise KeyError(f"When pulling {col} data, you should include start and end times in kwargs")
-        df = get_historical_data(table, start, end, output_format='pandas')[col]
+        df = pd.Series(get_historical_data(table, start, end, output_format='pandas')[col])
+        logging.warning(f"Pulled {col} for {table} from IEX.")
 
     elif col.lower()[:3] == "sma":
         try:
@@ -104,8 +117,11 @@ def _pull_col_data(table, col, start, end):
             interval=interval,   # something like "daily"
             time_period=time_periods,  # would capture 20 in sma20
         )
-        df = pd.DataFrame(sma[0])    # apparently sma[0] _could_ be a string
+        df = pd.Series(sma[0])    # apparently sma[0] _could_ be a string
         df.index = pd.DatetimeIndex(df.index)
+        df.name = col
+        logging.warning(f"Pulled {col} for {table} from AlphaVantage.")
+
     else:
         raise ValueError(f"Pulling {col} data is not yet supported")
 
@@ -125,7 +141,14 @@ def _previous_trading_day(date):
     return date
 
 
-def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
+def pull_data_sql(
+    con, 
+    table, 
+    start, 
+    end, 
+    cols=["close"], 
+    pull_ahead: pd.Timedelta=pd.Timedelta("0D"),
+    debug=False):
     """ Try to make cols a list so you can pull multiple attr if needed
     
     parameters:
@@ -143,11 +166,15 @@ def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
 
     # missing_cols is the data you need to pull in full
     missing_cols = _check_table_health(con, table, cols)
-    final_df = pd.DataFrame([], index=pd.DatetimeIndex([]))
-    final_df.index.name = "time"
+    final_df = pd.DataFrame(
+        [], 
+        index=pd.DatetimeIndex(
+            [], 
+            name="time",)
+        )
 
     for col in cols:
-        col_data = pd.DataFrame([], index=pd.DatetimeIndex([], name='time'))
+        col_data = pd.Series([], index=pd.DatetimeIndex([], name='time'), name=col)
 
         # was not missing, some data probably exists
         if col not in missing_cols:
@@ -159,10 +186,9 @@ def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
             query = f"SELECT MAX(time) FROM {table} WHERE {col} IS NOT NULL;"
             cur.execute(query)
             db_end = cur.fetchone()[0]
-            print(f"db_start:{db_start}\tdb_end: {db_end}")
             
             if db_start is None or db_end is None:
-                raise ValueError(f"There doesn't seem to be any data in {col}, or the query didn't work.")
+                logging.info(f"There doesn't seem to be any data in {col}, or the query didn't work.")
             missing_dates = get_missing_dates(db_start, db_end, start, end)
         
         # all missing and can pull full date range
@@ -176,26 +202,31 @@ def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
             query = f"SELECT time, {col} FROM {table} WHERE time >= '{start}' AND time <= '{end}'"
             cur.execute(query)
             res = cur.fetchall()
-            pulled = pd.DataFrame(
+
+            # if we are pulling a single day, pulled will be empty if the date is missing
+            # have to pull if some missing because might still need the the rest of whats in SQL
+            pulled = pd.Series(
                 [x[1] for x in res],
-                columns=[col],
+                name=col,
                 index=pd.DatetimeIndex([x[0] for x in res], name='time'),
-            )
+            ).dropna()
             col_data = col_data.append(pulled)
+            logging.info(f"Pulled {col} data for {table} from SQL starting {start} and ending {end}")
+    
         elif missing_dates == []:
             # ALL dates are missing, can pull from source and push to db
             col_data = _pull_col_data(table, col, start, end)
             series_to_sql(col_data, con, table)
-        
+ 
         while missing_dates:
                 # pull missing data from source
                 start_, end_ = missing_dates.pop(0)
                 
-                if start_ == end_:
-                    continue
+                # not sure why this is here
+                # if start_ == end_:
+                #     continue
                 
-                pulled_data = _pull_col_data(table, col, start_, end_) # should be sql pull
-                # pulled_data.index = pulled_data.index.rename("time")
+                pulled_data = _pull_col_data(table, col, start_, end_+ pull_ahead) # should be sql pull
 
                 # could get NaN data if using non trading days
                 if not pulled_data.empty:
@@ -203,18 +234,31 @@ def pull_data_sql(con, table, start, end, cols=["price"], debug=False):
                     # append it to column that will part of returned df
                     series_to_sql(pulled_data, con, table)
                     # pulled_data.to_sql(table, con)
-                    col_data = col_data.append(pulled_data)  
+
+                    # NOTE think you can just append a .dropna()'ed series
+                    col_data = col_data.append(pulled_data)
         con.commit()
 
         # right here pull last time
-        final_df = final_df.merge(
-            col_data, how='outer', on='time'
-        )
-    return final_df.sort_index(ascending=True)
+        try:
+            # final_df = final_df.merge(
+            #     col_data, how='outer', on='time'
+            # )
+            final_df = pd.concat([final_df, col_data], axis=1)
+        except:
+            import ipdb; ipdb.set_trace()
+    try:
+        final_df = final_df.sort_index(ascending=True)
+    except:
+        import ipdb; ipdb.set_trace()
+    return final_df[start: end]
 
 
-def series_to_sql(s: pd.Series, con, table, chunk_size=10):
-    """ Goal is for the series to be updated to the db """
+def series_to_sql(s, con, table, chunk_size=10):
+    """ Goal is for the series to be updated to the db 
+    
+    s: some sort of pandas data struct, DataFrame or Series
+    """
     cur = con.cursor()
     for i in range(0, len(s), chunk_size):
         query = _build_query(
@@ -222,9 +266,9 @@ def series_to_sql(s: pd.Series, con, table, chunk_size=10):
             table,
             s.name,
         )
-        print(f"exectuing:\n {query}")
         cur.execute(query)
-
+    logging.info(f"Executing series_to_sql for {table} {s.name} from {min(s.index)} to {max(s.index)}")
+        
 
 def _build_query(values, table: str, col: str):
     """ build query string """
@@ -232,7 +276,19 @@ def _build_query(values, table: str, col: str):
         raise ValueError(f"table: {table} or col: {col} aren't strings.")
 
     query_list = []
-    for idx, val in values.items():
+
+    # TODO! fix this, doesn't work for dataframe
+    if isinstance(values, pd.DataFrame):
+        # convert to series
+        df_col = values.columns.item()
+        values = pd.Series(values[df_col])
+    elif isinstance(values, pd.Series):
+        pass
+    else:
+        import ipdb; ipdb.set_trace()
+        raise ValueError(f"for table {table} and col {col} we dont have df.")
+
+    for idx, val in values.items(): 
         # for different types, decide to have quotes or not
         # like '{idx}' -vs- {val}
         update_query = f"UPDATE SET {col}={val};"
@@ -244,16 +300,19 @@ def _build_query(values, table: str, col: str):
 
 
 def get_missing_dates(db_start, db_end, start, end, debug=False):
+    if db_start is None or db_end is None:   # should actually be AND
+        return []
+    
     if start > end:
         raise ValueError(f"The start date {start} cannot be after the end date {end}.")
 
     missing_dates = []
     if debug: print(f"db_start: {db_start}\tdb_end: {db_end}")
     
-    if end <= db_start:
+    if end < db_start:
         # gap on the left, pull from (start, db_start - 1D)
         missing_dates.append((start, db_start - one_day))
-    elif start >= db_end:
+    elif start > db_end:
         # just get the data specified (db_end + 1D, end)
         missing_dates.append((db_end + one_day, end))
 
@@ -276,41 +335,6 @@ def get_missing_dates(db_start, db_end, start, end, debug=False):
 
     return missing_dates
 
-def get_sma(
-    ticker:str, 
-    interval:str, 
-    time_periods: int, 
-    timestamp: pd.Timestamp=None):
-    from alpha_vantage.techindicators import TechIndicators
-    import time
-
-    # pkl path to the cache dataframe
-    path = os.path.join(os.path.dirname(__file__), "data", os.environ["ENV_TYPE"], f"{ticker}_{interval}_sma{time_periods}.csv")
-    if os.path.exists(path):
-        # can just pull and return the saved object
-        # print("Used local cache for SMA")
-        df = pd.read_csv(path, index_col="date")
-        df.index = pd.DatetimeIndex(df.index)
-        return df
-
-    """ None timestamp=None just means get the most recent"""
-    sma = TechIndicators(key=ALPHA_VANTAGE, output_format="pandas").get_sma(
-        ticker, 
-        interval=interval, 
-        time_period=time_periods,
-    )
-    
-    if not sma:
-        raise ValueError("Didn't manage to get SMA from alpha_vantage API")
-    
-    # save the csv
-    df = pd.DataFrame(sma[0])    # apparently sma[0] _could_ be a string
-    df.index = pd.DatetimeIndex(df.index)
-    df.to_csv(path, index=True)
-
-    # return the df
-    print("Pulled SMA from API")
-    return df
 
 def timestamp_to_date(timestamp):
     ts = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")

@@ -92,6 +92,24 @@ class TestGetMissingDates(unittest.TestCase):
         dates = get_missing_dates(self.db_left, self.db_right, left, right)
         assert dates is None
 
+    def test_single_boundary_right(self):
+        dates = get_missing_dates(
+            pd.Timestamp('2019-01-02 00:00:00', freq='D'),
+            pd.Timestamp('2019-01-28 00:00:00', freq='D'),
+            pd.Timestamp('2019-01-28 00:00:00', freq='D'),
+            pd.Timestamp('2019-01-28 00:00:00', freq='D'),
+            )
+        assert dates is None
+
+    def test_single_boundary_left(self):
+        dates = get_missing_dates(
+            pd.Timestamp('2019-01-02 00:00:00', freq='D'),
+            pd.Timestamp('2019-01-28 00:00:00', freq='D'),
+            pd.Timestamp('2019-01-02 00:00:00', freq='D'),
+            pd.Timestamp('2019-01-02 00:00:00', freq='D'),
+            )
+        assert dates is None
+
     def test_both_left(self):
         left = pd.Timestamp("2019-01-01")
         right = pd.Timestamp("2019-02-01")
@@ -149,26 +167,12 @@ class TestPullColData(unittest.TestCase):
         # can't really compare prices since the testing API is random
         assert all(index == df.index)
 
-    def test_pull_badkwargs(self):
-        kwargs = {}
-        
-        # open data
-        with pytest.raises(KeyError):
-            _pull_col_data(
-                table="spy", 
-                col="open",
-                **kwargs,
-            )
-            _pull_col_data(
-                table="spy", 
-                col="sma20",
-                **kwargs,
-            )  
-
     def test_pull_sma(self):
         df = _pull_col_data(
             table="spy",
             col="sma50",
+            start=pd.Timestamp("2020-01-01"),
+            end=pd.Timestamp("2020-02-02"),            
         )
         expected = {0: 95.7273, 234:94.0212, 3333: 132.4932}
         for loc in expected:
