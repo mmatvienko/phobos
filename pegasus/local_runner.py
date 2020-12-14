@@ -2,7 +2,6 @@ import logging, sys
 
 import pandas as pd
 import trading_calendars as tc
-import matplotlib.pyplot as plt
 
 from pegasus.strategies.sma import SMA
 from titan.portfolio import Portfolio
@@ -14,7 +13,7 @@ def run():
     nasdaq = tc.get_calendar("NASDAQ")
 
     final_date = None
-    for date in pd.date_range(start=pd.Timestamp('2019-01-01'), periods=360, freq="1D"):
+    for date in pd.date_range(start=pd.Timestamp('2018-01-01'), periods=365, freq="1D"):
 
         if not nasdaq.is_session(date):
             logging.info(f"Skipping {date}")
@@ -26,17 +25,7 @@ def run():
 
     print(strat.portfolio.evaluate(timestamp=final_date))
     print(strat.portfolio.cash)
-    df = strat.get_results()
-    fig = plt.figure()
-    # do plotting stuff
-    for col in df.columns:
-        if col == "pv":
-            df[col].plot(secondary_y=True, legend=True)
-        else:
-            df[col].plot(legend=True)
-        plt.legend(col)
-
-    plt.show()
+    strat.get_results()
 
 if __name__ == "__main__":
     set_test_env()

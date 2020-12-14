@@ -4,6 +4,7 @@ from titan.portfolio import Portfolio
 
 import logging
 import pandas as pd
+import matplotlib.pyplot as plt
 
 class SMA():
     def __init__(self, portfolio, tickers=["SPY"], run_name:str="sma"):
@@ -36,13 +37,13 @@ class SMA():
                 )            
             logging.info(f"SMA{short_days} = {short_sma.item()}\tSMA{long_days} = {long_sma.item()}")
             # if sma 50 < sma 200, sell
-            if short_sma < long_sma:
+            if short_sma > long_sma:
                 # go short
-                self.portfolio.close_pos(tick, timestamp=timestamp)
+                order_res = self.portfolio.close_pos(tick, timestamp=timestamp)
 
-            elif short_sma > long_sma:
+            elif short_sma < long_sma:
                 # go long
-                self.portfolio.order(tick, 10, timestamp=timestamp)
+                order_res = self.portfolio.order(tick, 10, timestamp=timestamp)
 
             row = pd.Series({
                 "sma50": short_sma,
@@ -59,8 +60,27 @@ class SMA():
 
     def get_results(self):
         # do some sort of summary.
+        df = self.results
+        fig = plt.figure()
+        plt.xticks(rotation=45)
+        ax = fig.add_subplot(111)
+        ax2 = ax.twinx()
+
+        colors = ["red", "blue", "orange", "green"]
+        # do plotting stuff
+        for col in df.columns:
+            if col == "pv":
+                ax2.plot(df[col], color=colors.pop(0), label=col)
+                # df[col].plot(secondary_y=True, legend=True)
+            else:
+                ax.plot(df[col], color=colors.pop(0), label=col)
+                # df[col].plot(legend=True)
+        
+        ax.legend(loc=0)
+        ax2.legend(loc=0)
+        plt.show()
         # could also include some post run computations
-        return self.results
+        return df
 
     def backfill(self, timestamp=None):
         """ Backfill all needed data for running step at timestamp
