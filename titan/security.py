@@ -94,6 +94,29 @@ class Security():
         
         return df[price_type]
 
+    def get_sma_slope(self, time_periods, interval="daily", timestamp:pd.Timestamp=None):
+        from pandas.tseries.offsets import BDay
+        import trading_calendars as tc
+        xnys = tc.get_calendar("XNYS")
+        p = xnys.previous_open(timestamp)
+
+
+        sma_frame = utils.pull_data_sql(
+            self.con,
+            self.ticker, 
+            start=pd.Timestamp(str(p)[:10]),
+            end=timestamp,
+            cols=[f"sma{time_periods}"]
+        )
+        if len(sma_frame) == 1:
+            # don't have enough data at his point, consider rolling back the date
+            return 0
+
+        frame = sma_frame
+        sma_now = frame.iloc[1, 0]
+        sma_prev = frame.iloc[0, 0]
+        return sma_now - sma_prev
+
     def get_sma(self, time_periods, interval="daily", timestamp:pd.Timestamp=None):
         """
         interval: the amount of time between each data point (DAILY)
@@ -106,6 +129,7 @@ class Security():
             self.ticker, 
             start=timestamp,
             end=timestamp,
-            cols=[f"sma{time_periods}"])
+            cols=[f"sma{time_periods}"]
+        )
         # import ipdb; ipdb.set_trace()
         return sma_frame[timestamp : timestamp].iloc[0, 0]

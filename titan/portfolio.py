@@ -19,9 +19,10 @@ class Portfolio():
         self.net_value = cash
         self.min_cash = cash
         self.broker = broker
-        # TODO 
 
     def __getitem__(self, ticker):
+        if ticker not in self.positions:
+            self.positions[ticker] = 0
         return self.positions[ticker]
 
     def __iter__(self):
@@ -36,12 +37,38 @@ class Portfolio():
             self._n += 1
             return keys[self._n-1]
 
+    def some_func(self, timestamp=None):
+        x = self.weight_vector()
+        delta = pd.Timedelta('5Y')
+        returns = pd.DataFrame()
+        for ticker in self.positions:
+            hist = Security(ticker).history(
+                timestamp - delta, 
+                timestamp, 
+                price_type='close')
+
+            returns[ticker] = hist.pct_change(1)
+            ret_mean = p_return.mean()
+            ret_var = p_return.var()
+            returns[ticker] = p_return
+        
+        
+
     def order(self, ticker:str, amt:int, price:float=None, timestamp:pd.Timestamp=None):
         """ Can go short, can go long based on amt
         """
+        if amt*Security(ticker).get_price(timestamp=timestamp) > self.cash:
+            return False
+
+        if not amt:
+            # on order for 0
+            return False
+
         amt, price = self.broker.open(ticker, amt=amt, price=price, timestamp=timestamp)
         p_str = f"{'SELL -' if amt < 0 else 'BUY +'} {amt}"
+        
         if isinstance(price, pd.Series):
+            # should never happen anymore
             import ipdb; ipdb.set_trace()
         if price:
             logging.info(f"{p_str} {ticker} @{price}")
@@ -67,7 +94,7 @@ class Portfolio():
         # make sure the position actually exists
         if ticker not in self.positions:
             self.positions[ticker] = 0
-            return True
+            return False
 
         # amount needed to transact to offset current open position
         amt = -self.positions[ticker]
@@ -166,6 +193,7 @@ class Portfolio():
             start = end - pd.Timedelta(time_frame)
 
         df = self.return_history(end)  # TODO: handle if these are of different length
+                                       # could just drop NaN
 
         # calculate historical var
         if historical:
