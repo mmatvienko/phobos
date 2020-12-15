@@ -63,7 +63,7 @@ def _check_table_health(con, table, cols):
         logging.info(columns)
 
         for col in cols:
-            if col not in columns and col in allowed_cols:
+            if col not in columns:
                 # column doesn't exist in table
                 query = f"ALTER TABLE {table} ADD {col} {col_types.get(col, 'FLOAT')};"
                 cur.execute(query)
@@ -73,9 +73,6 @@ def _check_table_health(con, table, cols):
 
     cur.close()
     return missing_cols
-
-
-allowed_cols = ("open", "close", "low", "high", "volume", "sma")
 
 
 def _pull_col_data(
@@ -101,7 +98,7 @@ def _pull_col_data(
         except:
             raise KeyError(f"When pulling {col} data, you should include start and end times in kwargs")
         df = pd.Series(get_historical_data(table, start, end, output_format='pandas')[col])
-        logging.warning(f"Pulled {col} for {table} from IEX.")
+        logging.warning(f"Pulled {col} for {table} from IEX starting {start} - {end}.")
 
     elif col.lower()[:3] == "sma":
         try:
@@ -117,10 +114,10 @@ def _pull_col_data(
             interval=interval,   # something like "daily"
             time_period=time_periods,  # would capture 20 in sma20
         )
-        df = pd.Series(sma[0])    # apparently sma[0] _could_ be a string
+        df = pd.Series(sma[0]['SMA'])    # apparently sma[0] _could_ be a string
         df.index = pd.DatetimeIndex(df.index)
         df.name = col
-        logging.warning(f"Pulled {col} for {table} from AlphaVantage.")
+        logging.warning(f"Pulled {col} for {table} from AlphaVantage from {start} to {end}.")
 
     else:
         raise ValueError(f"Pulling {col} data is not yet supported")
@@ -216,6 +213,7 @@ def pull_data_sql(
         elif missing_dates == []:
             # ALL dates are missing, can pull from source and push to db
             col_data = _pull_col_data(table, col, start, end)
+            # TODO if this didn't work then drop the added column which doesn't have pullable info
             series_to_sql(col_data, con, table)
  
         while missing_dates:

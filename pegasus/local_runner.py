@@ -1,19 +1,40 @@
-import logging, sys
+import logging, sys, os
 
 import pandas as pd
 import trading_calendars as tc
+import psycopg2 as psql
 
 from pegasus.strategies.sma import SMA
 from titan.portfolio import Portfolio
-from canopus.secrets import set_test_env
-
+from titan.security import Security
+from canopus.secrets import set_test_env, set_prod_env
+from canopus.utils import pull_data_sql
 
 def run():
     strat = SMA(Portfolio(cash=100_000))
     nasdaq = tc.get_calendar("NASDAQ")
 
+    # pre pull price data
+    con = psql.connect(
+        host="localhost", 
+        user="marcmatvienko",
+        database=os.environ["ENV_TYPE"]+"_db", 
+        password=None, 
+    )
+    start = nasdaq.next_open(pd.Timestamp('2017-01-02'))
+    start = pd.Timestamp(str(start)[:10])
+    end = nasdaq.previous_close(start + pd.Timedelta("1300D"))
+    end = pd.Timestamp(str(end)[:10])
+
+    pull_data_sql(
+        con, 
+        "SPY", 
+        end,
+        end,
+        cols=["close"]
+    )
     final_date = None
-    for date in pd.date_range(start=pd.Timestamp('2018-01-01'), periods=365, freq="1D"):
+    for date in pd.date_range(start=start, end=end, freq="1D"):
 
         if not nasdaq.is_session(date):
             logging.info(f"Skipping {date}")
@@ -25,6 +46,9 @@ def run():
 
     print(strat.portfolio.evaluate(timestamp=final_date))
     print(strat.portfolio.cash)
+    init_amt = 100_000 / Security("spy").get_price(timestamp=start)
+    final_val = init_amt*Security("spy").get_price(timestamp=end)
+    print(final_val)
     strat.get_results()
 
 if __name__ == "__main__":
@@ -35,7 +59,7 @@ if __name__ == "__main__":
     stdout_handler = logging.StreamHandler(sys.stdout)
     handlers = [file_handler, stdout_handler]
     logging.basicConfig(
-        level=logging.DEBUG, 
+        level=logging.WARNING, 
         format='[%(asctime)s] {%(filename)s:%(lineno)d} %(levelname)s - %(message)s',
         handlers=handlers
     )
