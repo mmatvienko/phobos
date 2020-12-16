@@ -171,7 +171,11 @@ def pull_data_sql(
         )
 
     for col in cols:
-        col_data = pd.Series([], index=pd.DatetimeIndex([], name='time'), name=col)
+        col_data = pd.Series([], index=pd.DatetimeIndex(
+            [], 
+            name='time'), 
+            name=col, 
+            dtype='float64')
 
         # was not missing, some data probably exists
         if col not in missing_cols:
@@ -207,12 +211,15 @@ def pull_data_sql(
                 name=col,
                 index=pd.DatetimeIndex([x[0] for x in res], name='time'),
             ).dropna()
+            
             col_data = col_data.append(pulled)
             logging.info(f"Pulled {col} data for {table} from SQL starting {start} and ending {end}")
     
         elif missing_dates == []:
             # ALL dates are missing, can pull from source and push to db
             col_data = _pull_col_data(table, col, start, end)
+            if col_data.empty:
+                raise RuntimeError(f"Had to pull some data {col} for {table} from {start} to {end} but there is none in DB and at source.")
             # TODO if this didn't work then drop the added column which doesn't have pullable info
             series_to_sql(col_data, con, table)
  
@@ -257,6 +264,10 @@ def series_to_sql(s, con, table, chunk_size=10):
     
     s: some sort of pandas data struct, DataFrame or Series
     """
+    if s.empty:
+        import ipdb; ipdb.set_trace()
+        return None
+
     cur = con.cursor()
     for i in range(0, len(s), chunk_size):
         query = _build_query(

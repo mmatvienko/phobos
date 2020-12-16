@@ -5,6 +5,7 @@ import logging
 
 from titan.dumb_broker import DumbBroker
 from titan.security import Security
+from numpy.linalg import inv
 
 
 class Portfolio():
@@ -37,10 +38,15 @@ class Portfolio():
             self._n += 1
             return keys[self._n-1]
 
-    def some_func(self, timestamp=None):
-        x = self.weight_vector()
+    def sharpe_optimal(self, r_f=0, timestamp=None):
+        """ calculate sharpe optimal holdings using formula from variance minimization
+        given some risk tolernace parameter
+
+        """
+        x = self.weight_vector()    # current holdings
         delta = pd.Timedelta('5Y')
         returns = pd.DataFrame()
+
         for ticker in self.positions:
             hist = Security(ticker).history(
                 timestamp - delta, 
@@ -48,11 +54,15 @@ class Portfolio():
                 price_type='close')
 
             returns[ticker] = hist.pct_change(1)
-            ret_mean = p_return.mean()
-            ret_var = p_return.var()
-            returns[ticker] = p_return
-        
-        
+    
+        V = returns.cov()
+        mu = returns.mean()
+        mu_hat = mu - r_f    # risk adjusted returns
+        # port_var = np.dot(x.T, np.dot(V, x))
+
+        opt_pos = np.dot(inv(V), mu_hat)
+        sharpe_optimal = opt_pos/sum(opt_pos)
+        return sharpe_optimal
 
     def order(self, ticker:str, amt:int, price:float=None, timestamp:pd.Timestamp=None):
         """ Can go short, can go long based on amt
@@ -178,7 +188,7 @@ class Portfolio():
     def incremental_VaR(self):
         raise NotImplementedError()
     
-    def VaR(self, start=None, end=pd.to_datetime("today"), time_frame="1Y", z_score=2.33, samples=10_000_000, historical=True):
+    def VaR(self, start=None, end=pd.Timestamp.today(), time_frame="1Y", z_score=2.33, samples=10_000_000, historical=True):
         """
         Given price history do monte carlo to get VaR
         sigma is corresponds to standard deviation in worst case event, i.e.

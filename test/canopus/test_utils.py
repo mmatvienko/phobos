@@ -48,10 +48,6 @@ class TestTableHealth(unittest.TestCase):
         cols = _check_table_health(self.con, "spy", ["price", "sma"])
         assert ("sma" in cols)
 
-    def test_col_types(self):
-        # verify that an entry in the col_types dict modifies behavior
-        assert False
-
 
 class TestGetMissingDates(unittest.TestCase):
     def setUp(self):
@@ -176,7 +172,7 @@ class TestPullColData(unittest.TestCase):
         )
         expected = {0: 95.7273, 234:94.0212, 3333: 132.4932}
         for loc in expected:
-            assert df.iloc[loc]["SMA"] == expected[loc]
+            assert df.iloc[loc] == expected[loc]
 
 
 class TestPullDataSql(unittest.TestCase):

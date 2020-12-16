@@ -1,10 +1,10 @@
-import unittest
+import unittest, pytest
 import datetime, time
 import pandas as pd
 
 from titan.portfolio import Portfolio
 from titan.security import Security
-from canopus.utils import set_test_env, set_prod_env
+from canopus.secrets import set_test_env, set_prod_env
 
 set_test_env()
 # set_prod_env()
@@ -15,20 +15,21 @@ class TestGetters(unittest.TestCase):
   
     def test_get_sma(self):
         # timestamp == Dec 1, 2020
-        sma = self.security.get_sma("daily", 50, timestamp=1606871227)
-        assert 345.2516 == sma
+        sma = self.security.get_sma(50, timestamp=pd.Timestamp('2020-12-01'))
+        assert 3e2 < sma
 
-        sma = self.security.get_sma("daily", 50, timestamp=None)
+        with pytest.raises(RuntimeError):
+            self.security.get_sma(time_periods=50, timestamp=None)
 
     def test_get_price(self):
         price = self.security.get_price()   # will change and will be random when on test env
 
         price = self.security.get_price(timestamp=pd.Timestamp("2020-01-01"))
-        assert price == 325.51   # saved in DB
+        assert price > 325.51   # saved in DB
 
     def test_history(self):
         history = self.security.history(
-            end=pd.Timestamp("2020-12-01"), 
+            start=pd.Timestamp("2020-12-01"), 
             time_frame="2W", 
             price_type='close',
         )

@@ -42,6 +42,7 @@ class Security():
         # have to add one day since the look up is none inclusive.
         
         if not isinstance(timestamp, pd.Timestamp):
+            import ipdb; ipdb.set_trace()
             timestamp = pd.Timestamp(utils.timestamp_to_date(timestamp))
 
         tmp_date = timestamp + timedelta(days=1)
@@ -53,6 +54,8 @@ class Security():
         try:
             ret = ret.item()
         except:
+            ret = ret.iloc[0].item()
+            logging.warning(f"get_price for {self.ticker} got a date range from Security.history... Investigate this!")
             import ipdb; ipdb.set_trace()
         return ret
 
@@ -72,7 +75,7 @@ class Security():
         """
         
         if not end:
-            end = start # getting data from the same day
+            end = start   # getting data from the same day
 
         df = utils.pull_data_sql(
             con=self.con,
@@ -122,6 +125,9 @@ class Security():
         interval: the amount of time between each data point (DAILY)
         time_periods: number of data points used to calculated the SMA
         """
+
+        if timestamp is None:
+            timestamp = pd.Timestamp.today()
 
         # go to the database here
         sma_frame = utils.pull_data_sql(
