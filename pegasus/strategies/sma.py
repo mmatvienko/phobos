@@ -1,6 +1,7 @@
 from time import time
 from titan.security import Security
 from titan.portfolio import Portfolio
+from pegasus.fe import diff, lag
 
 import logging
 import pandas as pd
@@ -22,6 +23,7 @@ class SMA():
         self.results = pd.DataFrame(index=pd.DatetimeIndex([], name="time"), columns=[f"sma{self.short_days}", f"sma{self.long_days}", "price", "pv"])
         self.shorts = pd.Series([], index=pd.DatetimeIndex([]))
         self.longs = pd.Series([], index=pd.DatetimeIndex([]))
+        self.fe = diff.Diff(1)
 
     def run(self, timestamp: pd.Timestamp=None):
         """  Given some time, run the strategy at that time.
@@ -62,10 +64,12 @@ class SMA():
                 if self.portfolio.order(tick, amt, timestamp=timestamp):
                     self.longs[timestamp] = price
 
+            price = sec.get_price(timestamp=timestamp)                
             row = pd.Series({
                 f"sma{self.short_days}": short_sma,
                 f"sma{self.long_days}": long_sma,
-                "price": sec.get_price(timestamp=timestamp),
+                "price": price,
+                "diff": self.fe.step(price),
                 "pv": self.portfolio.evaluate(timestamp=timestamp),
             }, name=timestamp)
 
@@ -88,10 +92,8 @@ class SMA():
         for col in df.columns:
             if col == "pv":
                 ax2.plot(df[col], color=colors.pop(0), label=col)
-                # df[col].plot(secondary_y=True, legend=True)
             else:
                 ax.plot(df[col], color=colors.pop(0), label=col)
-                # df[col].plot(legend=True)
         
         # show the purchase locations
         ax.plot(self.longs, 'g^')

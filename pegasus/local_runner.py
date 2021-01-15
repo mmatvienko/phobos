@@ -23,16 +23,18 @@ def run():
     )
     start = nasdaq.next_open(pd.Timestamp('2017-01-02'))
     start = pd.Timestamp(str(start)[:10])
-    end = nasdaq.previous_close(start + pd.Timedelta("1300D"))
+    end = nasdaq.previous_close(start + pd.Timedelta("130D"))
     end = pd.Timestamp(str(end)[:10])
 
-    pull_data_sql(
-        con, 
-        "SPY", 
-        end,
-        end,
-        cols=["close"]
-    )
+    for tick in strat.tickers:
+        pull_data_sql(
+            con, 
+            tick, 
+            end,
+            end,
+            cols=["close"]
+        )
+
     final_date = None
     for date in pd.date_range(start=start, end=end, freq="1D"):
 

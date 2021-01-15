@@ -42,7 +42,6 @@ class Security():
         # have to add one day since the look up is none inclusive.
         
         if not isinstance(timestamp, pd.Timestamp):
-            import ipdb; ipdb.set_trace()
             timestamp = pd.Timestamp(utils.timestamp_to_date(timestamp))
 
         tmp_date = timestamp + timedelta(days=1)

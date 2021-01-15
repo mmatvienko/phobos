@@ -246,9 +246,6 @@ def pull_data_sql(
 
         # right here pull last time
         try:
-            # final_df = final_df.merge(
-            #     col_data, how='outer', on='time'
-            # )
             final_df = pd.concat([final_df, col_data], axis=1)
         except:
             import ipdb; ipdb.set_trace()
