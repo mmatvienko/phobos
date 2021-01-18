@@ -60,7 +60,6 @@ def _check_table_health(con, table, cols):
         missing_cols = []
         # check for column existing in db
         columns = [x[3] for x in fetched]
-        logging.info(columns)
 
         for col in cols:
             if col not in columns:
@@ -97,7 +96,14 @@ def _pull_col_data(
             end = end
         except:
             raise KeyError(f"When pulling {col} data, you should include start and end times in kwargs")
-        df = pd.Series(get_historical_data(table, start, end, output_format='pandas')[col])
+        if os.environ["DATA_SOURCE"] == "default":
+            df = pd.Series(get_historical_data(table, start, end, output_format='pandas')[col])
+        elif os.environ["DATA_SOURCE"] == "alpaca":
+            import alpaca_trade_api as tradeapi
+            api = tradeapi.REST()
+            df = pd.Series(api.get_barset(table, 'daily', start=start, end=end).df[col])
+        else:
+            raise ValueError(f'Data source: {os.environ["DATA_SOURCE"]} does not have an established pulling method.')
         logging.warning(f"Pulled {col} for {table} from IEX starting {start} - {end}.")
 
     elif col.lower()[:3] == "sma":
@@ -344,6 +350,4 @@ def get_missing_dates(db_start, db_end, start, end, debug=False):
 
 def timestamp_to_date(timestamp):
     ts = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
-    print(datetime.fromtimestamp(timestamp))
-    print(f"turned timestamp from {timestamp} to {ts}")
     return ts

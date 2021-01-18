@@ -26,7 +26,8 @@ class Security():
                 cur.execute(f"CREATE TABLE {self.ticker} (time TIMESTAMP NOT NULL, PRIMARY KEY(time));")        
             self.con.commit()
         except:
-            logging.info("Didn't create new table, exists.")
+            pass
+            # TODO REMOVE logging.info("Didn't create new table, exists.")
         
     def get_price(self, timestamp=None):
         """ Gets the price for a security

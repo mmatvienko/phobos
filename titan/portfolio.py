@@ -51,9 +51,14 @@ class Portfolio():
         if timestamp is None:
             raise ValueError("Timestamp for save_stats cannot be none right now.")
 
-        net_equity = self.evaluate(timestamp=timestamp)
+        net_cash = self.cash
+        net_value = self.evaluate(timestamp=timestamp)
+        net_equity = net_value - net_cash
+
         to_save = {
             "net_equity": net_equity,
+            "net_value": net_value,
+            "net_cash": net_cash,
         }
         self.stats = self.stats.append(to_save, ignore_index=True)   # instead of appending, do an insert instead
 
@@ -94,7 +99,7 @@ class Portfolio():
             # on order for 0
             return False
 
-        amt, price = self.broker.open(ticker, amt=amt, price=price, timestamp=timestamp)
+        amt, price = self.broker.order(ticker, amt=amt, price=price, timestamp=timestamp)
         p_str = f"{'SELL -' if amt < 0 else 'BUY +'} {amt}"
         
         if isinstance(price, pd.Series):
@@ -134,12 +139,26 @@ class Portfolio():
         # want to keep trying to sell the fill amount until a valid order comes through
         ATTEMPTS = 5
         for _ in range(ATTEMPTS):
+            # TODO handle partial orders
             close_amt, close_price = self.order(ticker, amt, timestamp=timestamp)
-            if close_amt:
+            if close_amt > 0:
                 logging.info(f"Closed out {close_amt} {ticker} @{close_price}")
                 return True
         
         return False
+
+    @classmethod
+    def read(self, key):
+        """ loads from disk
+        key: the unique identifier for the portfolio, to know which one to load
+        """
+        pass
+
+    def write(self, key):
+        """ write to disk
+        key: the unique identifier for the portfolio, to know which one to load
+        """
+        pass
 
     def net_return(self):
         return self.net_value - self.init_cash

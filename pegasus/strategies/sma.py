@@ -2,6 +2,7 @@ from time import time
 from titan.security import Security
 from titan.portfolio import Portfolio
 from pegasus.fe import diff, lag
+from canopus.utils import timestamp_to_date
 
 import logging
 import pandas as pd
@@ -30,6 +31,10 @@ class SMA():
         if timestamp is None, run live
 
         """
+        if timestamp is None:
+            # want to run the strategy live if timestamp is None
+            timestamp = pd.Timestamp(timestamp_to_date(time()))
+
         for tick in self.tickers:
             sec = Security(tick)
             short_sma = sec.get_sma(
@@ -69,7 +74,7 @@ class SMA():
                 f"sma{self.short_days}": short_sma,
                 f"sma{self.long_days}": long_sma,
                 "price": price,
-                "diff": self.fe.step(price),
+                # "diff": self.fe.step(price),
                 "pv": self.portfolio.evaluate(timestamp=timestamp),
             }, name=timestamp)
 

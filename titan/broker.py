@@ -12,8 +12,5 @@ class Broker(ABC):
     def __init__(self):
         self.broker_name = "base"
 
-    def open(self, ticker, amt, price, date=None):
-        raise NotImplementedError()
-
-    def close(self, ticker, amt, price, date=None):
+    def order(self, ticker, amt, price, date=None):
         raise NotImplementedError()
